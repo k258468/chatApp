@@ -61,6 +61,7 @@ create table room_members (
 create table questions (
   id uuid primary key default gen_random_uuid(),
   room_id uuid references rooms(id) on delete cascade,
+  owner_id uuid references auth.users(id) on delete set null,
   text text not null,
   status text default 'open',
   author text,
@@ -69,10 +70,40 @@ create table questions (
   created_at timestamptz default now()
 );
 
+create table answers (
+  id uuid primary key default gen_random_uuid(),
+  question_id uuid references questions(id) on delete cascade,
+  text text not null,
+  author text not null,
+  role text not null check (role in ('teacher', 'student', 'ta')),
+  created_at timestamptz default now()
+);
+
+create table question_reactions (
+  id uuid primary key default gen_random_uuid(),
+  question_id uuid references questions(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  type text not null check (type in ('like', 'thanks')),
+  created_at timestamptz default now(),
+  unique (question_id, user_id, type)
+);
+
+create table answer_reactions (
+  id uuid primary key default gen_random_uuid(),
+  answer_id uuid references answers(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  type text not null check (type in ('like', 'thanks')),
+  created_at timestamptz default now(),
+  unique (answer_id, user_id, type)
+);
+
 alter table profiles enable row level security;
 alter table rooms enable row level security;
 alter table room_members enable row level security;
 alter table questions enable row level security;
+alter table answers enable row level security;
+alter table question_reactions enable row level security;
+alter table answer_reactions enable row level security;
 
 create policy "profiles read/write" on profiles
   for all using (auth.uid() = id) with check (auth.uid() = id);
@@ -99,7 +130,31 @@ create policy "questions insert" on questions
   for insert with check (auth.uid() is not null);
 
 create policy "questions update" on questions
-  for update using (auth.uid() is not null);
+  for update using (
+    auth.uid() = owner_id
+    or exists (
+      select 1 from profiles p
+      where p.id = auth.uid() and p.role in ('teacher', 'ta')
+    )
+  );
+
+create policy "answers read" on answers
+  for select using (true);
+
+create policy "answers insert" on answers
+  for insert with check (auth.uid() is not null);
+
+create policy "question_reactions read" on question_reactions
+  for select using (true);
+
+create policy "question_reactions insert" on question_reactions
+  for insert with check (auth.uid() = user_id);
+
+create policy "answer_reactions read" on answer_reactions
+  for select using (true);
+
+create policy "answer_reactions insert" on answer_reactions
+  for insert with check (auth.uid() = user_id);
 ```
 
 5) `.env` にプロジェクトの URL と anon key を設定

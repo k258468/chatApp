@@ -22,9 +22,11 @@ export interface Question {
   text: string;
   status: QuestionStatus;
   createdAt: string;
+  ownerId?: string;
   author?: string;
   anonymous?: boolean;
   reactions: Reactions;
+  answers: Answer[];
 }
 
 export interface Profile {
@@ -38,4 +40,14 @@ export interface UserAccount {
   name: string;
   role: Role;
   email: string;
+}
+
+export interface Answer {
+  id: string;
+  questionId: string;
+  text: string;
+  author: string;
+  role: Role;
+  createdAt: string;
+  reactions: Reactions;
 }

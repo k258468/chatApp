@@ -1,18 +1,37 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import type { Question, Reactions, Role } from "../types";
 
-defineProps<{
+const props = defineProps<{
   role: Role;
   questions: Question[];
+  currentUserId?: string;
 }>();
 
 const emit = defineEmits<{
   (e: "resolve", payload: { questionId: string }): void;
   (e: "reopen", payload: { questionId: string }): void;
   (e: "react", payload: { questionId: string; type: keyof Reactions }): void;
+  (e: "react-answer", payload: { answerId: string; type: keyof Reactions }): void;
+  (e: "reply", payload: { questionId: string; text: string }): void;
 }>();
 
 const statusLabel = (status: string) => (status === "resolved" ? "回答済み" : "受付中");
+const replyText = ref<Record<string, string>>({});
+const roleLabel = (role: Role) => {
+  if (role === "teacher") return "教員";
+  if (role === "ta") return "TA";
+  return "学生";
+};
+
+const submitReply = (questionId: string) => {
+  const text = replyText.value[questionId]?.trim();
+  if (!text) {
+    return;
+  }
+  emit("reply", { questionId, text });
+  replyText.value[questionId] = "";
+};
 </script>
 
 <template>
@@ -29,6 +48,40 @@ const statusLabel = (status: string) => (status === "resolved" ? "回答済み" 
         <span class="time">{{ new Date(question.createdAt).toLocaleTimeString() }}</span>
       </div>
       <p class="text">{{ question.text }}</p>
+      <div v-if="question.answers.length" class="answers">
+        <div v-for="answer in question.answers" :key="answer.id" class="answer">
+          <div class="answer-meta">
+            <span class="answer-author">{{ answer.author }}</span>
+            <span class="answer-role">{{ roleLabel(answer.role) }}</span>
+            <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
+          </div>
+          <p class="answer-text">{{ answer.text }}</p>
+          <div class="answer-actions">
+            <button
+              class="reaction"
+              @click="emit('react-answer', { answerId: answer.id, type: 'like' })"
+            >
+              いいね {{ answer.reactions.like }}
+            </button>
+            <button
+              class="reaction"
+              @click="emit('react-answer', { answerId: answer.id, type: 'thanks' })"
+            >
+              参考になった {{ answer.reactions.thanks }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="reply">
+        <input
+          v-model="replyText[question.id]"
+          type="text"
+          placeholder="回答・返信を入力"
+        />
+        <button class="reply-btn" type="button" @click="submitReply(question.id)">
+          返信
+        </button>
+      </div>
       <div class="footer">
         <span v-if="question.anonymous" class="author">匿名</span>
         <span v-else-if="question.author" class="author">{{ question.author }}</span>
@@ -46,6 +99,22 @@ const statusLabel = (status: string) => (status === "resolved" ? "回答済み" 
           >
             参考になった {{ question.reactions.thanks }}
           </button>
+          <template v-if="role === 'student' && question.ownerId === props.currentUserId">
+            <button
+              v-if="question.status === 'open'"
+              class="action ghost"
+              @click="emit('resolve', { questionId: question.id })"
+            >
+              納得
+            </button>
+            <button
+              v-else
+              class="action ghost"
+              @click="emit('reopen', { questionId: question.id })"
+            >
+              納得を取り消す
+            </button>
+          </template>
           <button
             v-if="(role === 'teacher' || role === 'ta') && question.status === 'open'"
             class="action"
@@ -113,6 +182,78 @@ const statusLabel = (status: string) => (status === "resolved" ? "回答済み" 
   line-height: 1.6;
   color: var(--ink);
   margin-bottom: 12px;
+}
+
+.answers {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.answer {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(31, 41, 55, 0.08);
+}
+
+.answer-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+}
+
+.answer-author {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.answer-role {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: white;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+}
+
+.answer-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.answer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.reply {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.reply input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  font-size: 13px;
+  background: white;
+}
+
+.reply-btn {
+  border: 1px solid rgba(31, 41, 55, 0.15);
+  background: white;
+  color: var(--ink);
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
 }
 
 .footer {

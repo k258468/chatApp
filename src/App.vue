@@ -151,7 +151,8 @@ const handleSubmitQuestion = async (payload: {
       room.value.id,
       payload.text,
       author,
-      payload.anonymous
+      payload.anonymous,
+      currentUser.value?.id
     );
     if (role.value !== "teacher") {
       profile.value = await dataApi.addXp(12);
@@ -190,14 +191,70 @@ const handleReopen = async (payload: { questionId: string }) => {
 
 const handleReact = async (payload: { questionId: string; type: "like" | "thanks" }) => {
   try {
-    const updated = await dataApi.addReaction(payload.questionId, payload.type);
+    if (!currentUser.value) {
+      setError("ログインが必要です。");
+      return;
+    }
+    const updated = await dataApi.addQuestionReaction(
+      payload.questionId,
+      payload.type,
+      currentUser.value.id
+    );
     if (updated) {
       questions.value = questions.value.map((question) =>
-        question.id === updated.id ? updated : question
+        question.id === updated.id ? { ...question, reactions: updated.reactions } : question
       );
     }
   } catch (err) {
     setError((err as Error).message);
+  }
+};
+
+const handleAnswerReact = async (payload: { answerId: string; type: "like" | "thanks" }) => {
+  try {
+    if (!currentUser.value) {
+      setError("ログインが必要です。");
+      return;
+    }
+    const updated = await dataApi.addAnswerReaction(
+      payload.answerId,
+      payload.type,
+      currentUser.value.id
+    );
+    if (!updated) {
+      return;
+    }
+    questions.value = questions.value.map((question) => ({
+      ...question,
+      answers: question.answers.map((answer) =>
+        answer.id === updated.id ? { ...answer, reactions: updated.reactions } : answer
+      ),
+    }));
+  } catch (err) {
+    setError((err as Error).message);
+  }
+};
+
+const handleReply = async (payload: { questionId: string; text: string }) => {
+  loading.value = true;
+  try {
+    const author = currentUser.value?.name ?? "匿名";
+    const roleValue = currentUser.value?.role ?? "student";
+    const answer = await dataApi.createAnswer(
+      payload.questionId,
+      payload.text,
+      author,
+      roleValue
+    );
+    questions.value = questions.value.map((question) =>
+      question.id === payload.questionId
+        ? { ...question, answers: [...question.answers, answer] }
+        : question
+    );
+  } catch (err) {
+    setError((err as Error).message);
+  } finally {
+    loading.value = false;
   }
 };
 
@@ -291,12 +348,15 @@ onMounted(() => {
           :questions="questions"
           :profile="profile"
           :loading="loading"
+          :current-user-id="currentUser?.id"
           @refresh="refreshQuestions"
           @exit="exitRoom"
           @submit="handleSubmitQuestion"
           @resolve="handleResolve"
           @reopen="handleReopen"
           @react="handleReact"
+          @react-answer="handleAnswerReact"
+          @reply="handleReply"
         />
       </section>
     </main>

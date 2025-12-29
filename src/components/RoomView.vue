@@ -10,6 +10,7 @@ const props = defineProps<{
   questions: Question[];
   profile: Profile;
   loading: boolean;
+  currentUserId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -19,6 +20,8 @@ const emit = defineEmits<{
   (e: "resolve", payload: { questionId: string }): void;
   (e: "reopen", payload: { questionId: string }): void;
   (e: "react", payload: { questionId: string; type: keyof Reactions }): void;
+  (e: "react-answer", payload: { answerId: string; type: keyof Reactions }): void;
+  (e: "reply", payload: { questionId: string; text: string }): void;
 }>();
 
 const text = ref("");
@@ -220,9 +223,12 @@ const applyHelper = () => {
       <QuestionList
         :role="role"
         :questions="questions"
+        :current-user-id="currentUserId"
         @resolve="emit('resolve', $event)"
         @reopen="emit('reopen', $event)"
         @react="emit('react', $event)"
+        @react-answer="emit('react-answer', $event)"
+        @reply="emit('reply', $event)"
       />
     </div>
   </section>

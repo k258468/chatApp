@@ -1,4 +1,5 @@
 import type {
+  Answer,
   Profile,
   Question,
   QuestionStatus,
@@ -28,15 +29,29 @@ const mapRoom = (row: any): Room => ({
   createdAt: row.created_at,
 });
 
+const mapAnswer = (row: any): Answer => ({
+  id: row.id,
+  questionId: row.question_id,
+  text: row.text,
+  author: row.author,
+  role: row.role,
+  createdAt: row.created_at,
+  reactions: row.reactions ?? { like: 0, thanks: 0 },
+});
+
 const mapQuestion = (row: any): Question => ({
   id: row.id,
   roomId: row.room_id,
   text: row.text,
   status: row.status,
   createdAt: row.created_at,
+  ownerId: row.owner_id ?? undefined,
   author: row.author,
   anonymous: row.anonymous ?? false,
   reactions: row.reactions ?? { like: 0, thanks: 0 },
+  answers: (row.answers ?? []).map(mapAnswer).sort((a: Answer, b: Answer) =>
+    a.createdAt.localeCompare(b.createdAt)
+  ),
 });
 
 export const dataApi = {
@@ -211,36 +226,111 @@ export const dataApi = {
     }
     const { data, error } = await supabase
       .from("questions")
-      .select("*")
+      .select("*, answers(*)")
       .eq("room_id", roomId)
       .order("created_at", { ascending: false });
     if (error || !data) {
       throw new Error(error?.message ?? "Failed to load questions");
     }
-    return data.map(mapQuestion);
+    const questionIds = data.map((row) => row.id);
+    const answerIds = data.flatMap((row) => (row.answers ?? []).map((answer: any) => answer.id));
+    const reactionsByQuestion = new Map<string, Reactions>();
+    const reactionsByAnswer = new Map<string, Reactions>();
+    if (questionIds.length) {
+      const { data: reactionRows, error: reactionError } = await supabase
+        .from("question_reactions")
+        .select("question_id, type")
+        .in("question_id", questionIds);
+      if (reactionError) {
+        throw new Error(reactionError.message);
+      }
+      for (const row of reactionRows ?? []) {
+        const current = reactionsByQuestion.get(row.question_id) ?? { like: 0, thanks: 0 };
+        current[row.type as keyof Reactions] += 1;
+        reactionsByQuestion.set(row.question_id, current);
+      }
+    }
+    if (answerIds.length) {
+      const { data: reactionRows, error: reactionError } = await supabase
+        .from("answer_reactions")
+        .select("answer_id, type")
+        .in("answer_id", answerIds);
+      if (reactionError) {
+        throw new Error(reactionError.message);
+      }
+      for (const row of reactionRows ?? []) {
+        const current = reactionsByAnswer.get(row.answer_id) ?? { like: 0, thanks: 0 };
+        current[row.type as keyof Reactions] += 1;
+        reactionsByAnswer.set(row.answer_id, current);
+      }
+    }
+    return data.map((row) => {
+      const question = mapQuestion(row);
+      question.reactions = reactionsByQuestion.get(question.id) ?? { like: 0, thanks: 0 };
+      question.answers = question.answers.map((answer) => ({
+        ...answer,
+        reactions: reactionsByAnswer.get(answer.id) ?? { like: 0, thanks: 0 },
+      }));
+      return question;
+    });
   },
   async createQuestion(
     roomId: string,
     text: string,
     author?: string,
-    anonymous?: boolean
+    anonymous?: boolean,
+    ownerId?: string
   ): Promise<Question> {
     if (useLocal) {
-      return localApi.createQuestion(roomId, text, author, anonymous);
+      return localApi.createQuestion(roomId, text, author, anonymous, ownerId);
     }
     const supabase = getSupabase();
     if (!supabase) {
-      return localApi.createQuestion(roomId, text, author, anonymous);
+      return localApi.createQuestion(roomId, text, author, anonymous, ownerId);
+    }
+    let resolvedOwnerId = ownerId;
+    if (!resolvedOwnerId) {
+      const { data: authData } = await supabase.auth.getUser();
+      resolvedOwnerId = authData.user?.id;
     }
     const { data, error } = await supabase
       .from("questions")
-      .insert([{ room_id: roomId, text, author, anonymous }])
+      .insert([{ room_id: roomId, text, author, anonymous, owner_id: resolvedOwnerId }])
       .select()
       .single();
     if (error || !data) {
       throw new Error(error?.message ?? "Failed to create question");
     }
-    return mapQuestion(data);
+    return {
+      ...mapQuestion(data),
+      answers: [],
+    };
+  },
+  async createAnswer(
+    questionId: string,
+    text: string,
+    author: string,
+    role: Role
+  ): Promise<Answer> {
+    if (useLocal) {
+      return localApi.createAnswer(questionId, text, author, role);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.createAnswer(questionId, text, author, role);
+    }
+    const { data, error } = await supabase
+      .from("answers")
+      .insert([{ question_id: questionId, text, author, role }])
+      .select()
+      .single();
+    if (error || !data) {
+      throw new Error(error?.message ?? "Failed to create answer");
+    }
+    return {
+      ...mapAnswer(data),
+      reactions: { like: 0, thanks: 0 },
+    };
   },
   async updateQuestionStatus(
     questionId: string,
@@ -257,44 +347,114 @@ export const dataApi = {
       .from("questions")
       .update({ status })
       .eq("id", questionId)
-      .select()
+      .select("*, answers(*)")
       .maybeSingle();
     if (error) {
       throw new Error(error.message);
     }
     return data ? mapQuestion(data) : null;
   },
-  async addReaction(
+  async addQuestionReaction(
     questionId: string,
-    type: keyof Reactions
+    type: keyof Reactions,
+    userId: string
   ): Promise<Question | null> {
     if (useLocal) {
-      return localApi.addReaction(questionId, type);
+      return localApi.addQuestionReaction(questionId, type, userId);
     }
     const supabase = getSupabase();
     if (!supabase) {
-      return localApi.addReaction(questionId, type);
+      return localApi.addQuestionReaction(questionId, type, userId);
     }
-    const { data: current, error: readError } = await supabase
+    const { data: inserted, error: insertError } = await supabase
+      .from("question_reactions")
+      .insert([{ question_id: questionId, user_id: userId, type }])
+      .select("id")
+      .maybeSingle();
+    if (insertError) {
+      if (insertError.code === "23505") {
+        return null;
+      }
+      throw new Error(insertError.message);
+    }
+    if (!inserted) {
+      return null;
+    }
+    const { data: questionRow, error: questionError } = await supabase
       .from("questions")
-      .select("reactions")
+      .select("*, answers(*)")
       .eq("id", questionId)
       .maybeSingle();
-    if (readError) {
-      throw new Error(readError.message);
+    if (questionError) {
+      throw new Error(questionError.message);
     }
-    const base: Reactions = current?.reactions ?? { like: 0, thanks: 0 };
-    const next = { ...base, [type]: base[type] + 1 };
-    const { data, error } = await supabase
-      .from("questions")
-      .update({ reactions: next })
-      .eq("id", questionId)
-      .select()
+    if (!questionRow) {
+      return null;
+    }
+    const { data: reactionRows, error: reactionError } = await supabase
+      .from("question_reactions")
+      .select("type")
+      .eq("question_id", questionId);
+    if (reactionError) {
+      throw new Error(reactionError.message);
+    }
+    const reactions: Reactions = { like: 0, thanks: 0 };
+    for (const row of reactionRows ?? []) {
+      reactions[row.type as keyof Reactions] += 1;
+    }
+    const question = mapQuestion(questionRow);
+    question.reactions = reactions;
+    return question;
+  },
+  async addAnswerReaction(
+    answerId: string,
+    type: keyof Reactions,
+    userId: string
+  ): Promise<Answer | null> {
+    if (useLocal) {
+      return localApi.addAnswerReaction(answerId, type, userId);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.addAnswerReaction(answerId, type, userId);
+    }
+    const { data: inserted, error: insertError } = await supabase
+      .from("answer_reactions")
+      .insert([{ answer_id: answerId, user_id: userId, type }])
+      .select("id")
       .maybeSingle();
-    if (error) {
-      throw new Error(error.message);
+    if (insertError) {
+      if (insertError.code === "23505") {
+        return null;
+      }
+      throw new Error(insertError.message);
     }
-    return data ? mapQuestion(data) : null;
+    if (!inserted) {
+      return null;
+    }
+    const { data: answerRow, error: answerError } = await supabase
+      .from("answers")
+      .select("*")
+      .eq("id", answerId)
+      .maybeSingle();
+    if (answerError) {
+      throw new Error(answerError.message);
+    }
+    if (!answerRow) {
+      return null;
+    }
+    const { data: reactionRows, error: reactionError } = await supabase
+      .from("answer_reactions")
+      .select("type")
+      .eq("answer_id", answerId);
+    if (reactionError) {
+      throw new Error(reactionError.message);
+    }
+    const reactions: Reactions = { like: 0, thanks: 0 };
+    for (const row of reactionRows ?? []) {
+      reactions[row.type as keyof Reactions] += 1;
+    }
+    return { ...mapAnswer(answerRow), reactions };
   },
   async getProfile(): Promise<Profile> {
     return localApi.getProfile();

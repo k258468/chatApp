@@ -6,6 +6,7 @@ import type {
   Room,
   Role,
   UserAccount,
+  Answer,
 } from "../types";
 
 type StoreShape = {
@@ -14,6 +15,8 @@ type StoreShape = {
   profile: Profile;
   users: Array<UserAccount & { password: string }>;
   memberships: Array<{ userId: string; roomId: string; joinedAt: string }>;
+  questionReactions: Array<{ questionId: string; userId: string; type: keyof Reactions }>;
+  answerReactions: Array<{ answerId: string; userId: string; type: keyof Reactions }>;
   currentUserId?: string;
 };
 
@@ -28,6 +31,8 @@ const loadStore = (): StoreShape => {
       profile: { xp: 0, level: 1, avatarStage: 0 },
       users: [],
       memberships: [],
+      questionReactions: [],
+      answerReactions: [],
       currentUserId: undefined,
     };
   }
@@ -39,6 +44,8 @@ const loadStore = (): StoreShape => {
       profile: parsed.profile ?? { xp: 0, level: 1, avatarStage: 0 },
       users: parsed.users ?? [],
       memberships: parsed.memberships ?? [],
+      questionReactions: parsed.questionReactions ?? [],
+      answerReactions: parsed.answerReactions ?? [],
       currentUserId: parsed.currentUserId,
     };
   } catch {
@@ -48,6 +55,8 @@ const loadStore = (): StoreShape => {
       profile: { xp: 0, level: 1, avatarStage: 0 },
       users: [],
       memberships: [],
+      questionReactions: [],
+      answerReactions: [],
       currentUserId: undefined,
     };
   }
@@ -69,6 +78,7 @@ const avatarForLevel = (level: number) => {
 };
 
 const baseReactions = (): Reactions => ({ like: 0, thanks: 0 });
+const baseAnswers = (): Answer[] => [];
 
 export const localApi = {
   async registerUser(
@@ -180,13 +190,18 @@ export const localApi = {
       .map((question) => ({
         ...question,
         reactions: question.reactions ?? baseReactions(),
+        answers: (question.answers ?? baseAnswers()).map((answer) => ({
+          ...answer,
+          reactions: answer.reactions ?? baseReactions(),
+        })),
       }));
   },
   async createQuestion(
     roomId: string,
     text: string,
     author?: string,
-    anonymous?: boolean
+    anonymous?: boolean,
+    ownerId?: string
   ): Promise<Question> {
     const store = loadStore();
     const question: Question = {
@@ -195,19 +210,55 @@ export const localApi = {
       text,
       status: "open",
       createdAt: new Date().toISOString(),
+      ownerId,
       author,
       anonymous,
       reactions: baseReactions(),
+      answers: baseAnswers(),
     };
     store.questions.unshift(question);
     saveStore(store);
     return question;
   },
-  async addReaction(
+  async createAnswer(
     questionId: string,
-    type: keyof Reactions
+    text: string,
+    author: string,
+    role: Role
+  ): Promise<Answer> {
+    const store = loadStore();
+    const target = store.questions.find((question) => question.id === questionId);
+    if (!target) {
+      throw new Error("質問が見つかりません。");
+    }
+    const answer: Answer = {
+      id: makeId(),
+      questionId,
+      text,
+      author,
+      role,
+      createdAt: new Date().toISOString(),
+      reactions: baseReactions(),
+    };
+    if (!target.answers) {
+      target.answers = baseAnswers();
+    }
+    target.answers.push(answer);
+    saveStore(store);
+    return answer;
+  },
+  async addQuestionReaction(
+    questionId: string,
+    type: keyof Reactions,
+    userId: string
   ): Promise<Question | null> {
     const store = loadStore();
+    const exists = store.questionReactions.some(
+      (entry) => entry.questionId === questionId && entry.userId === userId && entry.type === type
+    );
+    if (exists) {
+      return null;
+    }
     const target = store.questions.find((question) => question.id === questionId);
     if (!target) {
       return null;
@@ -216,8 +267,36 @@ export const localApi = {
       target.reactions = baseReactions();
     }
     target.reactions[type] += 1;
+    store.questionReactions.push({ questionId, userId, type });
     saveStore(store);
     return target;
+  },
+  async addAnswerReaction(
+    answerId: string,
+    type: keyof Reactions,
+    userId: string
+  ): Promise<Answer | null> {
+    const store = loadStore();
+    const exists = store.answerReactions.some(
+      (entry) => entry.answerId === answerId && entry.userId === userId && entry.type === type
+    );
+    if (exists) {
+      return null;
+    }
+    for (const question of store.questions) {
+      const answer = question.answers?.find((entry) => entry.id === answerId);
+      if (!answer) {
+        continue;
+      }
+      if (!answer.reactions) {
+        answer.reactions = baseReactions();
+      }
+      answer.reactions[type] += 1;
+      store.answerReactions.push({ answerId, userId, type });
+      saveStore(store);
+      return answer;
+    }
+    return null;
   },
   async updateQuestionStatus(
     questionId: string,
