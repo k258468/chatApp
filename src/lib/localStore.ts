@@ -12,7 +12,8 @@ type StoreShape = {
   rooms: Room[];
   questions: Question[];
   profile: Profile;
-  users: UserAccount[];
+  users: Array<UserAccount & { password: string }>;
+  memberships: Array<{ userId: string; roomId: string; joinedAt: string }>;
   currentUserId?: string;
 };
 
@@ -26,6 +27,7 @@ const loadStore = (): StoreShape => {
       questions: [],
       profile: { xp: 0, level: 1, avatarStage: 0 },
       users: [],
+      memberships: [],
       currentUserId: undefined,
     };
   }
@@ -36,6 +38,7 @@ const loadStore = (): StoreShape => {
       questions: parsed.questions ?? [],
       profile: parsed.profile ?? { xp: 0, level: 1, avatarStage: 0 },
       users: parsed.users ?? [],
+      memberships: parsed.memberships ?? [],
       currentUserId: parsed.currentUserId,
     };
   } catch {
@@ -44,6 +47,7 @@ const loadStore = (): StoreShape => {
       questions: [],
       profile: { xp: 0, level: 1, avatarStage: 0 },
       users: [],
+      memberships: [],
       currentUserId: undefined,
     };
   }
@@ -67,33 +71,39 @@ const avatarForLevel = (level: number) => {
 const baseReactions = (): Reactions => ({ like: 0, thanks: 0 });
 
 export const localApi = {
-  async registerUser(name: string, role: Role): Promise<UserAccount> {
+  async registerUser(
+    name: string,
+    role: Role,
+    email: string,
+    password: string
+  ): Promise<UserAccount> {
     const store = loadStore();
     const existing = store.users.find(
-      (user) => user.name.toLowerCase() === name.toLowerCase() && user.role === role
+      (user) => user.email.toLowerCase() === email.toLowerCase()
     );
     if (existing) {
       store.currentUserId = existing.id;
       saveStore(store);
-      return existing;
+      const { password: _password, ...user } = existing;
+      return user;
     }
-    const user: UserAccount = { id: makeId(), name, role };
+    const user = { id: makeId(), name, role, email, password };
     store.users.push(user);
     store.currentUserId = user.id;
     saveStore(store);
-    return user;
+    const { password: _password, ...account } = user;
+    return account;
   },
-  async loginUser(name: string, role: Role): Promise<UserAccount | null> {
+  async loginUser(email: string, password: string): Promise<UserAccount | null> {
     const store = loadStore();
-    const user = store.users.find(
-      (entry) => entry.name.toLowerCase() === name.toLowerCase() && entry.role === role
-    );
-    if (!user) {
+    const user = store.users.find((entry) => entry.email.toLowerCase() === email.toLowerCase());
+    if (!user || user.password !== password) {
       return null;
     }
     store.currentUserId = user.id;
     saveStore(store);
-    return user;
+    const { password: _password, ...account } = user;
+    return account;
   },
   async logoutUser(): Promise<void> {
     const store = loadStore();
@@ -105,7 +115,24 @@ export const localApi = {
     if (!store.currentUserId) {
       return null;
     }
-    return store.users.find((user) => user.id === store.currentUserId) ?? null;
+    const user = store.users.find((entry) => entry.id === store.currentUserId);
+    if (!user) {
+      return null;
+    }
+    const { password: _password, ...account } = user;
+    return account;
+  },
+  async listJoinedRooms(): Promise<Room[]> {
+    const store = loadStore();
+    if (!store.currentUserId) {
+      return [];
+    }
+    const roomIds = new Set(
+      store.memberships
+        .filter((member) => member.userId === store.currentUserId)
+        .map((member) => member.roomId)
+    );
+    return store.rooms.filter((room) => roomIds.has(room.id));
   },
   async createRoom(name: string, channel: string, taKey?: string): Promise<Room> {
     const store = loadStore();
@@ -118,12 +145,33 @@ export const localApi = {
       createdAt: new Date().toISOString(),
     };
     store.rooms.unshift(room);
+    if (store.currentUserId) {
+      store.memberships.unshift({
+        userId: store.currentUserId,
+        roomId: room.id,
+        joinedAt: new Date().toISOString(),
+      });
+    }
     saveStore(store);
     return room;
   },
   async joinRoom(code: string): Promise<Room | null> {
     const store = loadStore();
-    return store.rooms.find((room) => room.code === code) ?? null;
+    const room = store.rooms.find((entry) => entry.code === code) ?? null;
+    if (room && store.currentUserId) {
+      const exists = store.memberships.some(
+        (member) => member.userId === store.currentUserId && member.roomId === room.id
+      );
+      if (!exists) {
+        store.memberships.unshift({
+          userId: store.currentUserId,
+          roomId: room.id,
+          joinedAt: new Date().toISOString(),
+        });
+        saveStore(store);
+      }
+    }
+    return room;
   },
   async listQuestions(roomId: string): Promise<Question[]> {
     const store = loadStore();

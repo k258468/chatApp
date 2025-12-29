@@ -3,23 +3,35 @@ import { ref } from "vue";
 import type { Role } from "../types";
 
 const emit = defineEmits<{
-  (e: "login", payload: { name: string; role: Role }): void;
-  (e: "register", payload: { name: string; role: Role }): void;
+  (e: "login", payload: { email: string; password: string }): void;
+  (e: "register", payload: { name: string; role: Role; email: string; password: string }): void;
 }>();
 
 const mode = ref<"login" | "register">("login");
 const name = ref("");
+const email = ref("");
+const password = ref("");
 const role = ref<Role>("student");
 
 const submit = () => {
-  const trimmed = name.value.trim();
-  if (!trimmed) {
+  const trimmedEmail = email.value.trim();
+  const trimmedPassword = password.value.trim();
+  if (!trimmedEmail || !trimmedPassword) {
     return;
   }
   if (mode.value === "login") {
-    emit("login", { name: trimmed, role: role.value });
+    emit("login", { email: trimmedEmail, password: trimmedPassword });
   } else {
-    emit("register", { name: trimmed, role: role.value });
+    const trimmedName = name.value.trim();
+    if (!trimmedName) {
+      return;
+    }
+    emit("register", {
+      name: trimmedName,
+      role: role.value,
+      email: trimmedEmail,
+      password: trimmedPassword,
+    });
   }
 };
 </script>
@@ -38,16 +50,24 @@ const submit = () => {
       </button>
     </div>
     <form class="form" @submit.prevent="submit">
-      <label>
+      <label v-if="mode === 'register'">
         <span>表示名</span>
         <input v-model="name" type="text" placeholder="例: Yuki" />
       </label>
       <label>
+        <span>メールアドレス</span>
+        <input v-model="email" type="email" placeholder="you@example.com" />
+      </label>
+      <label v-if="mode === 'register'">
         <span>役割</span>
         <select v-model="role">
           <option value="student">学生</option>
           <option value="teacher">教員</option>
         </select>
+      </label>
+      <label>
+        <span>パスワード</span>
+        <input v-model="password" type="password" placeholder="8文字以上推奨" />
       </label>
       <button class="primary" type="submit">
         {{ mode === "login" ? "ログイン" : "登録して続ける" }}

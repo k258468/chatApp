@@ -37,4 +37,5 @@ export interface UserAccount {
   id: string;
   name: string;
   role: Role;
+  email: string;
 }

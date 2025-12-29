@@ -5,15 +5,18 @@ import { dataApi } from "./lib/data";
 import AuthPanel from "./components/AuthPanel.vue";
 import RoomCreate from "./components/RoomCreate.vue";
 import RoomJoin from "./components/RoomJoin.vue";
+import RoomHistory from "./components/RoomHistory.vue";
 import RoomView from "./components/RoomView.vue";
 
 const currentUser = ref<UserAccount | null>(null);
 const role = computed<Role>(() => currentUser.value?.role ?? "student");
 const room = ref<Room | null>(null);
 const questions = ref<Question[]>([]);
+const joinedRooms = ref<Room[]>([]);
 const profile = ref<Profile>({ xp: 0, level: 1, avatarStage: 0 });
 const loading = ref(false);
 const error = ref<string | null>(null);
+const pendingJoinCode = ref<string | null>(null);
 
 const setError = (message: string | null) => {
   error.value = message;
@@ -26,15 +29,21 @@ const setError = (message: string | null) => {
   }
 };
 
-const handleLogin = async (payload: { name: string; role: Role }) => {
+const handleLogin = async (payload: { email: string; password: string }) => {
   loading.value = true;
   try {
-    const user = await dataApi.loginUser(payload.name, payload.role);
+    const user = await dataApi.loginUser(payload.email, payload.password);
     if (!user) {
-      setError("アカウントが見つかりませんでした。新規登録してください。");
+      setError("ログインに失敗しました。入力内容を確認してください。");
       return;
     }
     currentUser.value = user;
+    joinedRooms.value = await dataApi.listJoinedRooms();
+    if (pendingJoinCode.value) {
+      const code = pendingJoinCode.value;
+      pendingJoinCode.value = null;
+      await handleJoinRoom({ code });
+    }
   } catch (err) {
     setError((err as Error).message);
   } finally {
@@ -42,10 +51,21 @@ const handleLogin = async (payload: { name: string; role: Role }) => {
   }
 };
 
-const handleRegister = async (payload: { name: string; role: Role }) => {
+const handleRegister = async (payload: {
+  name: string;
+  role: Role;
+  email: string;
+  password: string;
+}) => {
   loading.value = true;
   try {
-    currentUser.value = await dataApi.registerUser(payload.name, payload.role);
+    currentUser.value = await dataApi.registerUser(
+      payload.name,
+      payload.role,
+      payload.email,
+      payload.password
+    );
+    joinedRooms.value = await dataApi.listJoinedRooms();
   } catch (err) {
     setError((err as Error).message);
   } finally {
@@ -58,6 +78,7 @@ const handleLogout = async () => {
   currentUser.value = null;
   room.value = null;
   questions.value = [];
+  joinedRooms.value = [];
 };
 
 const handleCreateRoom = async (payload: {
@@ -68,6 +89,7 @@ const handleCreateRoom = async (payload: {
   loading.value = true;
   try {
     room.value = await dataApi.createRoom(payload.name, payload.channel, payload.taKey);
+    joinedRooms.value = await dataApi.listJoinedRooms();
     await refreshQuestions();
   } catch (err) {
     setError((err as Error).message);
@@ -89,6 +111,7 @@ const handleJoinRoom = async (payload: { code: string; taKey?: string }) => {
       return;
     }
     room.value = joined;
+    joinedRooms.value = await dataApi.listJoinedRooms();
     await refreshQuestions();
   } catch (err) {
     setError((err as Error).message);
@@ -183,6 +206,11 @@ const exitRoom = () => {
   questions.value = [];
 };
 
+const handleOpenRoom = async (target: Room) => {
+  room.value = target;
+  await refreshQuestions();
+};
+
 const pulseMessage = computed(() => {
   const openCount = questions.value.filter((question) => question.status === "open").length;
   if (openCount >= 10) {
@@ -197,14 +225,26 @@ const pulseMessage = computed(() => {
 onMounted(() => {
   dataApi.getCurrentUser().then((value) => {
     currentUser.value = value;
+    if (value) {
+      dataApi.listJoinedRooms().then((rooms) => {
+        joinedRooms.value = rooms;
+      });
+      if (pendingJoinCode.value) {
+        const code = pendingJoinCode.value;
+        pendingJoinCode.value = null;
+        handleJoinRoom({ code });
+      }
+    }
   });
   dataApi.getProfile().then((value) => {
     profile.value = value;
   });
   const params = new URLSearchParams(window.location.search);
   const code = params.get("room");
-  if (code) {
+  if (code && currentUser.value) {
     handleJoinRoom({ code: code.toUpperCase() });
+  } else if (code) {
+    pendingJoinCode.value = code.toUpperCase();
   }
 });
 </script>
@@ -237,12 +277,13 @@ onMounted(() => {
           </div>
           <button class="ghost" @click="handleLogout">ログアウト</button>
         </div>
-        <RoomCreate v-if="currentUser && role === 'teacher' && !room" @create="handleCreateRoom" />
-        <RoomJoin
-          v-if="currentUser && role !== 'teacher' && !room"
-          :role="role"
-          @join="handleJoinRoom"
+        <RoomHistory
+          v-if="currentUser && !room"
+          :rooms="joinedRooms"
+          @open="handleOpenRoom"
         />
+        <RoomCreate v-if="currentUser && role === 'teacher' && !room" @create="handleCreateRoom" />
+        <RoomJoin v-if="currentUser && !room" :role="role" @join="handleJoinRoom" />
         <RoomView
           v-if="currentUser && room"
           :room="room"
