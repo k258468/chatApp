@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Profile, Question, Role, Room, UserAccount } from "./types";
 import { dataApi } from "./lib/data";
 import AuthPanel from "./components/AuthPanel.vue";
@@ -120,33 +120,31 @@ const handleJoinRoom = async (payload: { code: string; taKey?: string }) => {
   }
 };
 
-const refreshQuestions = async () => {
+const refreshQuestions = async (options?: { silent?: boolean }) => {
   if (!room.value) {
     return;
   }
-  loading.value = true;
+  if (!options?.silent) {
+    loading.value = true;
+  }
   try {
     questions.value = await dataApi.listQuestions(room.value.id);
   } catch (err) {
     setError((err as Error).message);
   } finally {
-    loading.value = false;
+    if (!options?.silent) {
+      loading.value = false;
+    }
   }
 };
 
-const handleSubmitQuestion = async (payload: {
-  text: string;
-  author?: string;
-  anonymous?: boolean;
-}) => {
+const handleSubmitQuestion = async (payload: { text: string; anonymous?: boolean }) => {
   if (!room.value) {
     return;
   }
   loading.value = true;
   try {
-    const author = payload.anonymous
-      ? undefined
-      : payload.author ?? currentUser.value?.name;
+    const author = payload.anonymous ? undefined : currentUser.value?.name;
     await dataApi.createQuestion(
       room.value.id,
       payload.text,
@@ -200,11 +198,14 @@ const handleReact = async (payload: { questionId: string; type: "like" | "thanks
       payload.type,
       currentUser.value.id
     );
-    if (updated) {
-      questions.value = questions.value.map((question) =>
-        question.id === updated.id ? { ...question, reactions: updated.reactions } : question
-      );
+    if (!updated) {
+      await refreshQuestions({ silent: true });
+      return;
     }
+    questions.value = questions.value.map((question) =>
+      question.id === updated.id ? { ...question, reactions: updated.reactions } : question
+    );
+    await refreshQuestions({ silent: true });
   } catch (err) {
     setError((err as Error).message);
   }
@@ -222,6 +223,7 @@ const handleAnswerReact = async (payload: { answerId: string; type: "like" | "th
       currentUser.value.id
     );
     if (!updated) {
+      await refreshQuestions({ silent: true });
       return;
     }
     questions.value = questions.value.map((question) => ({
@@ -230,27 +232,64 @@ const handleAnswerReact = async (payload: { answerId: string; type: "like" | "th
         answer.id === updated.id ? { ...answer, reactions: updated.reactions } : answer
       ),
     }));
+    await refreshQuestions({ silent: true });
   } catch (err) {
     setError((err as Error).message);
   }
 };
 
-const handleReply = async (payload: { questionId: string; text: string }) => {
+const handleReply = async (payload: {
+  questionId: string;
+  text: string;
+  anonymous?: boolean;
+}) => {
   loading.value = true;
   try {
-    const author = currentUser.value?.name ?? "匿名";
+    const author = payload.anonymous ? "匿名" : currentUser.value?.name ?? "匿名";
     const roleValue = currentUser.value?.role ?? "student";
+    const ownerId = currentUser.value?.id;
     const answer = await dataApi.createAnswer(
       payload.questionId,
       payload.text,
       author,
-      roleValue
+      roleValue,
+      ownerId
     );
     questions.value = questions.value.map((question) =>
       question.id === payload.questionId
         ? { ...question, answers: [...question.answers, answer] }
         : question
     );
+  } catch (err) {
+    setError((err as Error).message);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleDeleteQuestion = async (payload: { questionId: string }) => {
+  if (!confirm("この質問を削除しますか？")) {
+    return;
+  }
+  loading.value = true;
+  try {
+    await dataApi.deleteQuestion(payload.questionId);
+    await refreshQuestions();
+  } catch (err) {
+    setError((err as Error).message);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleDeleteAnswer = async (payload: { answerId: string }) => {
+  if (!confirm("この返信を削除しますか？")) {
+    return;
+  }
+  loading.value = true;
+  try {
+    await dataApi.deleteAnswer(payload.answerId);
+    await refreshQuestions();
   } catch (err) {
     setError((err as Error).message);
   } finally {
@@ -303,6 +342,38 @@ onMounted(() => {
   } else if (code) {
     pendingJoinCode.value = code.toUpperCase();
   }
+});
+
+let refreshTimer: number | null = null;
+const startPolling = () => {
+  if (refreshTimer) {
+    return;
+  }
+  refreshTimer = window.setInterval(() => {
+    if (room.value) {
+      refreshQuestions({ silent: true });
+    }
+  }, 5000);
+};
+
+const stopPolling = () => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+};
+
+watch(room, (value) => {
+  if (value) {
+    refreshQuestions();
+    startPolling();
+  } else {
+    stopPolling();
+  }
+});
+
+onUnmounted(() => {
+  stopPolling();
 });
 </script>
 
@@ -357,6 +428,8 @@ onMounted(() => {
           @react="handleReact"
           @react-answer="handleAnswerReact"
           @reply="handleReply"
+          @delete-question="handleDeleteQuestion"
+          @delete-answer="handleDeleteAnswer"
         />
       </section>
     </main>

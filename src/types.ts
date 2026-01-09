@@ -50,4 +50,5 @@ export interface Answer {
   role: Role;
   createdAt: string;
   reactions: Reactions;
+  ownerId?: string;
 }

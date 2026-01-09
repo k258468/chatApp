@@ -224,7 +224,8 @@ export const localApi = {
     questionId: string,
     text: string,
     author: string,
-    role: Role
+    role: Role,
+    ownerId?: string
   ): Promise<Answer> {
     const store = loadStore();
     const target = store.questions.find((question) => question.id === questionId);
@@ -239,6 +240,7 @@ export const localApi = {
       role,
       createdAt: new Date().toISOString(),
       reactions: baseReactions(),
+      ownerId,
     };
     if (!target.answers) {
       target.answers = baseAnswers();
@@ -253,12 +255,6 @@ export const localApi = {
     userId: string
   ): Promise<Question | null> {
     const store = loadStore();
-    const exists = store.questionReactions.some(
-      (entry) => entry.questionId === questionId && entry.userId === userId && entry.type === type
-    );
-    if (exists) {
-      return null;
-    }
     const target = store.questions.find((question) => question.id === questionId);
     if (!target) {
       return null;
@@ -266,8 +262,16 @@ export const localApi = {
     if (!target.reactions) {
       target.reactions = baseReactions();
     }
-    target.reactions[type] += 1;
-    store.questionReactions.push({ questionId, userId, type });
+    const existingIndex = store.questionReactions.findIndex(
+      (entry) => entry.questionId === questionId && entry.userId === userId && entry.type === type
+    );
+    if (existingIndex >= 0) {
+      store.questionReactions.splice(existingIndex, 1);
+      target.reactions[type] = Math.max(0, target.reactions[type] - 1);
+    } else {
+      target.reactions[type] += 1;
+      store.questionReactions.push({ questionId, userId, type });
+    }
     saveStore(store);
     return target;
   },
@@ -277,12 +281,9 @@ export const localApi = {
     userId: string
   ): Promise<Answer | null> {
     const store = loadStore();
-    const exists = store.answerReactions.some(
+    const existingIndex = store.answerReactions.findIndex(
       (entry) => entry.answerId === answerId && entry.userId === userId && entry.type === type
     );
-    if (exists) {
-      return null;
-    }
     for (const question of store.questions) {
       const answer = question.answers?.find((entry) => entry.id === answerId);
       if (!answer) {
@@ -291,8 +292,13 @@ export const localApi = {
       if (!answer.reactions) {
         answer.reactions = baseReactions();
       }
-      answer.reactions[type] += 1;
-      store.answerReactions.push({ answerId, userId, type });
+      if (existingIndex >= 0) {
+        store.answerReactions.splice(existingIndex, 1);
+        answer.reactions[type] = Math.max(0, answer.reactions[type] - 1);
+      } else {
+        answer.reactions[type] += 1;
+        store.answerReactions.push({ answerId, userId, type });
+      }
       saveStore(store);
       return answer;
     }
@@ -310,6 +316,41 @@ export const localApi = {
     target.status = status;
     saveStore(store);
     return target;
+  },
+  async deleteQuestion(questionId: string): Promise<boolean> {
+    const store = loadStore();
+    const targetIndex = store.questions.findIndex((question) => question.id === questionId);
+    if (targetIndex === -1) {
+      return false;
+    }
+    const [removed] = store.questions.splice(targetIndex, 1);
+    store.questionReactions = store.questionReactions.filter(
+      (entry) => entry.questionId !== questionId
+    );
+    if (removed?.answers?.length) {
+      const answerIds = new Set(removed.answers.map((answer) => answer.id));
+      store.answerReactions = store.answerReactions.filter(
+        (entry) => !answerIds.has(entry.answerId)
+      );
+    }
+    saveStore(store);
+    return true;
+  },
+  async deleteAnswer(answerId: string): Promise<boolean> {
+    const store = loadStore();
+    for (const question of store.questions) {
+      const answerIndex = question.answers?.findIndex((answer) => answer.id === answerId);
+      if (answerIndex === undefined || answerIndex < 0) {
+        continue;
+      }
+      question.answers?.splice(answerIndex, 1);
+      store.answerReactions = store.answerReactions.filter(
+        (entry) => entry.answerId !== answerId
+      );
+      saveStore(store);
+      return true;
+    }
+    return false;
   },
   async getProfile(): Promise<Profile> {
     const store = loadStore();
