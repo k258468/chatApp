@@ -220,3 +220,5 @@ create table questions (
 - 教員認証 (Supabase Auth + RLS)
 - チャンネルの階層化
 - 質問のタグや投票
+
+## node_modulesは削除しました
