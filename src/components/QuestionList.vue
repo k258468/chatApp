@@ -13,24 +13,36 @@ const emit = defineEmits<{
   (e: "reopen", payload: { questionId: string }): void;
   (e: "react", payload: { questionId: string; type: keyof Reactions }): void;
   (e: "react-answer", payload: { answerId: string; type: keyof Reactions }): void;
-  (e: "reply", payload: { questionId: string; text: string }): void;
+  (e: "reply", payload: { questionId: string; text: string; anonymous?: boolean }): void;
+  (e: "delete-question", payload: { questionId: string }): void;
+  (e: "delete-answer", payload: { answerId: string }): void;
 }>();
 
 const statusLabel = (status: string) => (status === "resolved" ? "回答済み" : "受付中");
 const replyText = ref<Record<string, string>>({});
+const replyAnonymous = ref<Record<string, boolean>>({});
 const roleLabel = (role: Role) => {
   if (role === "teacher") return "教員";
   if (role === "ta") return "TA";
   return "学生";
 };
+const canDeleteQuestion = (question: Question) =>
+  (props.role === "student" && question.ownerId === props.currentUserId) ||
+  props.role === "teacher" ||
+  props.role === "ta";
+const canDeleteAnswer = (answer: Question["answers"][number]) =>
+  (props.role === "student" && answer.ownerId === props.currentUserId) ||
+  props.role === "teacher" ||
+  props.role === "ta";
 
 const submitReply = (questionId: string) => {
   const text = replyText.value[questionId]?.trim();
   if (!text) {
     return;
   }
-  emit("reply", { questionId, text });
+  emit("reply", { questionId, text, anonymous: replyAnonymous.value[questionId] });
   replyText.value[questionId] = "";
+  replyAnonymous.value[questionId] = false;
 };
 </script>
 
@@ -51,7 +63,7 @@ const submitReply = (questionId: string) => {
       <div v-if="question.answers.length" class="answers">
         <div v-for="answer in question.answers" :key="answer.id" class="answer">
           <div class="answer-meta">
-            <span class="answer-author">{{ answer.author }}</span>
+            <span class="answer-author">{{ answer.author || "匿名" }}</span>
             <span class="answer-role">{{ roleLabel(answer.role) }}</span>
             <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
           </div>
@@ -69,6 +81,13 @@ const submitReply = (questionId: string) => {
             >
               参考になった {{ answer.reactions.thanks }}
             </button>
+            <button
+              v-if="canDeleteAnswer(answer)"
+              class="action danger"
+              @click="emit('delete-answer', { answerId: answer.id })"
+            >
+              返信削除
+            </button>
           </div>
         </div>
       </div>
@@ -82,6 +101,10 @@ const submitReply = (questionId: string) => {
           返信
         </button>
       </div>
+      <label class="reply-anon">
+        <input v-model="replyAnonymous[question.id]" type="checkbox" />
+        匿名で返信する
+      </label>
       <div class="footer">
         <span v-if="question.anonymous" class="author">匿名</span>
         <span v-else-if="question.author" class="author">{{ question.author }}</span>
@@ -115,6 +138,13 @@ const submitReply = (questionId: string) => {
               納得を取り消す
             </button>
           </template>
+          <button
+            v-if="canDeleteQuestion(question)"
+            class="action danger"
+            @click="emit('delete-question', { questionId: question.id })"
+          >
+            質問削除
+          </button>
           <button
             v-if="(role === 'teacher' || role === 'ta') && question.status === 'open'"
             class="action"
@@ -238,6 +268,15 @@ const submitReply = (questionId: string) => {
   margin-bottom: 12px;
 }
 
+.reply-anon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-bottom: 12px;
+}
+
 .reply input {
   flex: 1;
   padding: 8px 12px;
@@ -294,6 +333,11 @@ const submitReply = (questionId: string) => {
   color: var(--ink);
   border: 1px solid rgba(31, 41, 55, 0.2);
 }
+
+.action.danger {
+  background: #ef4444;
+}
+
 
 .empty {
   text-align: center;

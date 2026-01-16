@@ -73,6 +73,7 @@ create table questions (
 create table answers (
   id uuid primary key default gen_random_uuid(),
   question_id uuid references questions(id) on delete cascade,
+  owner_id uuid references auth.users(id) on delete set null,
   text text not null,
   author text not null,
   role text not null check (role in ('teacher', 'student', 'ta')),
@@ -138,11 +139,29 @@ create policy "questions update" on questions
     )
   );
 
+create policy "questions delete" on questions
+  for delete using (
+    auth.uid() = owner_id
+    or exists (
+      select 1 from profiles p
+      where p.id = auth.uid() and p.role in ('teacher', 'ta')
+    )
+  );
+
 create policy "answers read" on answers
   for select using (true);
 
 create policy "answers insert" on answers
   for insert with check (auth.uid() is not null);
+
+create policy "answers delete" on answers
+  for delete using (
+    auth.uid() = owner_id
+    or exists (
+      select 1 from profiles p
+      where p.id = auth.uid() and p.role in ('teacher', 'ta')
+    )
+  );
 
 create policy "question_reactions read" on question_reactions
   for select using (true);
@@ -150,11 +169,17 @@ create policy "question_reactions read" on question_reactions
 create policy "question_reactions insert" on question_reactions
   for insert with check (auth.uid() = user_id);
 
+create policy "question_reactions delete" on question_reactions
+  for delete using (auth.uid() = user_id);
+
 create policy "answer_reactions read" on answer_reactions
   for select using (true);
 
 create policy "answer_reactions insert" on answer_reactions
   for insert with check (auth.uid() = user_id);
+
+create policy "answer_reactions delete" on answer_reactions
+  for delete using (auth.uid() = user_id);
 ```
 
 5) `.env` にプロジェクトの URL と anon key を設定

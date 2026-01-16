@@ -37,6 +37,7 @@ const mapAnswer = (row: any): Answer => ({
   role: row.role,
   createdAt: row.created_at,
   reactions: row.reactions ?? { like: 0, thanks: 0 },
+  ownerId: row.owner_id ?? undefined,
 });
 
 const mapQuestion = (row: any): Question => ({
@@ -310,20 +311,40 @@ export const dataApi = {
     questionId: string,
     text: string,
     author: string,
-    role: Role
+    role: Role,
+    ownerId?: string
   ): Promise<Answer> {
     if (useLocal) {
-      return localApi.createAnswer(questionId, text, author, role);
+      return localApi.createAnswer(questionId, text, author, role, ownerId);
     }
     const supabase = getSupabase();
     if (!supabase) {
-      return localApi.createAnswer(questionId, text, author, role);
+      return localApi.createAnswer(questionId, text, author, role, ownerId);
     }
     const { data, error } = await supabase
       .from("answers")
-      .insert([{ question_id: questionId, text, author, role }])
+      .insert([{ question_id: questionId, text, author, role, owner_id: ownerId }])
       .select()
       .single();
+    if (
+      error &&
+      (error.code === "42703" ||
+        error.code === "PGRST204" ||
+        error.message.includes("schema cache"))
+    ) {
+      const { data: retryData, error: retryError } = await supabase
+        .from("answers")
+        .insert([{ question_id: questionId, text, author, role }])
+        .select()
+        .single();
+      if (retryError || !retryData) {
+        throw new Error(retryError?.message ?? "Failed to create answer");
+      }
+      return {
+        ...mapAnswer(retryData),
+        reactions: { like: 0, thanks: 0 },
+      };
+    }
     if (error || !data) {
       throw new Error(error?.message ?? "Failed to create answer");
     }
@@ -366,19 +387,31 @@ export const dataApi = {
     if (!supabase) {
       return localApi.addQuestionReaction(questionId, type, userId);
     }
-    const { data: inserted, error: insertError } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("question_reactions")
-      .insert([{ question_id: questionId, user_id: userId, type }])
       .select("id")
+      .eq("question_id", questionId)
+      .eq("user_id", userId)
+      .eq("type", type)
       .maybeSingle();
-    if (insertError) {
-      if (insertError.code === "23505") {
-        return null;
-      }
-      throw new Error(insertError.message);
+    if (existingError) {
+      throw new Error(existingError.message);
     }
-    if (!inserted) {
-      return null;
+    if (existing) {
+      const { error: deleteError } = await supabase
+        .from("question_reactions")
+        .delete()
+        .eq("id", existing.id);
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from("question_reactions")
+        .insert([{ question_id: questionId, user_id: userId, type }]);
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
     }
     const { data: questionRow, error: questionError } = await supabase
       .from("questions")
@@ -418,19 +451,31 @@ export const dataApi = {
     if (!supabase) {
       return localApi.addAnswerReaction(answerId, type, userId);
     }
-    const { data: inserted, error: insertError } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("answer_reactions")
-      .insert([{ answer_id: answerId, user_id: userId, type }])
       .select("id")
+      .eq("answer_id", answerId)
+      .eq("user_id", userId)
+      .eq("type", type)
       .maybeSingle();
-    if (insertError) {
-      if (insertError.code === "23505") {
-        return null;
-      }
-      throw new Error(insertError.message);
+    if (existingError) {
+      throw new Error(existingError.message);
     }
-    if (!inserted) {
-      return null;
+    if (existing) {
+      const { error: deleteError } = await supabase
+        .from("answer_reactions")
+        .delete()
+        .eq("id", existing.id);
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from("answer_reactions")
+        .insert([{ answer_id: answerId, user_id: userId, type }]);
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
     }
     const { data: answerRow, error: answerError } = await supabase
       .from("answers")
@@ -455,6 +500,48 @@ export const dataApi = {
       reactions[row.type as keyof Reactions] += 1;
     }
     return { ...mapAnswer(answerRow), reactions };
+  },
+  async deleteQuestion(questionId: string): Promise<boolean> {
+    if (useLocal) {
+      return localApi.deleteQuestion(questionId);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.deleteQuestion(questionId);
+    }
+    const { data, error } = await supabase
+      .from("questions")
+      .delete()
+      .eq("id", questionId)
+      .select("id");
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data || data.length === 0) {
+      throw new Error("削除権限がありません。");
+    }
+    return true;
+  },
+  async deleteAnswer(answerId: string): Promise<boolean> {
+    if (useLocal) {
+      return localApi.deleteAnswer(answerId);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.deleteAnswer(answerId);
+    }
+    const { data, error } = await supabase
+      .from("answers")
+      .delete()
+      .eq("id", answerId)
+      .select("id");
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data || data.length === 0) {
+      throw new Error("削除権限がありません。");
+    }
+    return true;
   },
   async getProfile(): Promise<Profile> {
     return localApi.getProfile();

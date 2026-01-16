@@ -16,16 +16,17 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "refresh"): void;
   (e: "exit"): void;
-  (e: "submit", payload: { text: string; author?: string; anonymous?: boolean }): void;
+  (e: "submit", payload: { text: string; anonymous?: boolean }): void;
   (e: "resolve", payload: { questionId: string }): void;
   (e: "reopen", payload: { questionId: string }): void;
   (e: "react", payload: { questionId: string; type: keyof Reactions }): void;
   (e: "react-answer", payload: { answerId: string; type: keyof Reactions }): void;
   (e: "reply", payload: { questionId: string; text: string }): void;
+  (e: "delete-question", payload: { questionId: string }): void;
+  (e: "delete-answer", payload: { answerId: string }): void;
 }>();
 
 const text = ref("");
-const author = ref("");
 const anonymous = ref(false);
 const qrCode = ref<string | null>(null);
 const helper = ref("");
@@ -64,10 +65,10 @@ const submit = () => {
   }
   emit("submit", {
     text: text.value.trim(),
-    author: anonymous.value ? undefined : author.value.trim() || undefined,
     anonymous: anonymous.value,
   });
   text.value = "";
+  helper.value = "";
 };
 
 const templates = [
@@ -166,13 +167,9 @@ const applyHelper = () => {
               AIで質問文に整形
             </button>
           </div>
-          <label>
-            <span>ニックネーム (任意)</span>
-            <input v-model="author" type="text" placeholder="例: Aki" :disabled="anonymous" />
-          </label>
           <label class="checkbox">
             <input v-model="anonymous" type="checkbox" />
-            匿名で投稿する
+            匿名で投稿する (登録名は表示されません)
           </label>
           <button class="primary" type="submit" :disabled="loading">
             投稿する
@@ -229,6 +226,8 @@ const applyHelper = () => {
         @react="emit('react', $event)"
         @react-answer="emit('react-answer', $event)"
         @reply="emit('reply', $event)"
+        @delete-question="emit('delete-question', $event)"
+        @delete-answer="emit('delete-answer', $event)"
       />
     </div>
   </section>
