@@ -12,7 +12,7 @@ import type {
 type StoreShape = {
   rooms: Room[];
   questions: Question[];
-  profile: Profile;
+  profiles: Record<string, Profile>;
   users: Array<UserAccount & { password: string }>;
   memberships: Array<{ userId: string; roomId: string; joinedAt: string }>;
   questionReactions: Array<{ questionId: string; userId: string; type: keyof Reactions }>;
@@ -28,7 +28,7 @@ const loadStore = (): StoreShape => {
     return {
       rooms: [],
       questions: [],
-      profile: { xp: 0, level: 1, avatarStage: 0 },
+      profiles: {},
       users: [],
       memberships: [],
       questionReactions: [],
@@ -37,11 +37,15 @@ const loadStore = (): StoreShape => {
     };
   }
   try {
-    const parsed = JSON.parse(raw) as StoreShape;
+    const parsed = JSON.parse(raw) as Partial<StoreShape> & { profile?: Profile };
+    const profiles = parsed.profiles ?? {};
+    if (parsed.profile && parsed.currentUserId && !profiles[parsed.currentUserId]) {
+      profiles[parsed.currentUserId] = parsed.profile;
+    }
     return {
       rooms: parsed.rooms ?? [],
       questions: parsed.questions ?? [],
-      profile: parsed.profile ?? { xp: 0, level: 1, avatarStage: 0 },
+      profiles,
       users: parsed.users ?? [],
       memberships: parsed.memberships ?? [],
       questionReactions: parsed.questionReactions ?? [],
@@ -52,7 +56,7 @@ const loadStore = (): StoreShape => {
     return {
       rooms: [],
       questions: [],
-      profile: { xp: 0, level: 1, avatarStage: 0 },
+      profiles: {},
       users: [],
       memberships: [],
       questionReactions: [],
@@ -68,7 +72,7 @@ const saveStore = (store: StoreShape) => {
 
 const makeId = () => crypto.randomUUID();
 
-const levelForXp = (xp: number) => Math.floor(xp / 100) + 1;
+const levelForXp = (xp: number) => Math.floor(xp);
 
 const avatarForLevel = (level: number) => {
   if (level >= 12) return 3;
@@ -81,6 +85,14 @@ const baseReactions = (): Reactions => ({ like: 0, thanks: 0 });
 const baseAnswers = (): Answer[] => [];
 
 export const localApi = {
+  setCurrentUserId(userId?: string) {
+    const store = loadStore();
+    store.currentUserId = userId;
+    if (userId && !store.profiles[userId]) {
+      store.profiles[userId] = { xp: 0, level: 0, avatarStage: 0 };
+    }
+    saveStore(store);
+  },
   async registerUser(
     name: string,
     role: Role,
@@ -93,13 +105,17 @@ export const localApi = {
     );
     if (existing) {
       store.currentUserId = existing.id;
+      if (!store.profiles[existing.id]) {
+        store.profiles[existing.id] = { xp: 0, level: 0, avatarStage: 0 };
+      }
       saveStore(store);
       const { password: _password, ...user } = existing;
       return user;
     }
-    const user = { id: makeId(), name, role, email, password };
+    const user = { id: makeId(), name, role, email, password, avatarUrl: undefined };
     store.users.push(user);
     store.currentUserId = user.id;
+    store.profiles[user.id] = { xp: 0, level: 0, avatarStage: 0 };
     saveStore(store);
     const { password: _password, ...account } = user;
     return account;
@@ -111,6 +127,9 @@ export const localApi = {
       return null;
     }
     store.currentUserId = user.id;
+    if (!store.profiles[user.id]) {
+      store.profiles[user.id] = { xp: 0, level: 0, avatarStage: 0 };
+    }
     saveStore(store);
     const { password: _password, ...account } = user;
     return account;
@@ -131,6 +150,31 @@ export const localApi = {
     }
     const { password: _password, ...account } = user;
     return account;
+  },
+  async updateAvatar(avatarUrl: string): Promise<UserAccount> {
+    const store = loadStore();
+    if (!store.currentUserId) {
+      throw new Error("ユーザーが見つかりません。");
+    }
+    const userIndex = store.users.findIndex((entry) => entry.id === store.currentUserId);
+    if (userIndex === -1) {
+      throw new Error("ユーザーが見つかりません。");
+    }
+    store.users[userIndex] = { ...store.users[userIndex], avatarUrl };
+    saveStore(store);
+    const { password: _password, ...account } = store.users[userIndex];
+    return account;
+  },
+  async listUserAvatars(userIds: string[]): Promise<Record<string, string>> {
+    const store = loadStore();
+    const result: Record<string, string> = {};
+    for (const userId of userIds) {
+      const user = store.users.find((entry) => entry.id === userId);
+      if (user?.avatarUrl) {
+        result[userId] = user.avatarUrl;
+      }
+    }
+    return result;
   },
   async listJoinedRooms(): Promise<Room[]> {
     const store = loadStore();
@@ -354,14 +398,23 @@ export const localApi = {
   },
   async getProfile(): Promise<Profile> {
     const store = loadStore();
-    return store.profile;
+    if (!store.currentUserId) {
+      return { xp: 0, level: 0, avatarStage: 0 };
+    }
+    return store.profiles[store.currentUserId] ?? { xp: 0, level: 0, avatarStage: 0 };
   },
   async addXp(amount: number): Promise<Profile> {
     const store = loadStore();
-    store.profile.xp += amount;
-    store.profile.level = levelForXp(store.profile.xp);
-    store.profile.avatarStage = avatarForLevel(store.profile.level);
+    if (!store.currentUserId) {
+      return { xp: 0, level: 0, avatarStage: 0 };
+    }
+    const profile =
+      store.profiles[store.currentUserId] ?? { xp: 0, level: 0, avatarStage: 0 };
+    profile.xp = Math.max(0, profile.xp + amount);
+    profile.level = levelForXp(profile.xp);
+    profile.avatarStage = avatarForLevel(profile.level);
+    store.profiles[store.currentUserId] = profile;
     saveStore(store);
-    return store.profile;
+    return profile;
   },
 };

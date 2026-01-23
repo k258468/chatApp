@@ -79,6 +79,7 @@ export const dataApi = {
     if (profileError) {
       throw new Error(profileError.message);
     }
+    localApi.setCurrentUserId(data.user.id);
     return { id: data.user.id, name, role, email };
   },
   async loginUser(email: string, password: string): Promise<UserAccount | null> {
@@ -98,7 +99,14 @@ export const dataApi = {
     if (profileError || !profile) {
       throw new Error(profileError?.message ?? "プロフィールが見つかりません。");
     }
-    return { id: data.user.id, name: profile.display_name, role: profile.role, email };
+    localApi.setCurrentUserId(data.user.id);
+    return {
+      id: data.user.id,
+      name: profile.display_name,
+      role: profile.role,
+      email,
+      avatarUrl: profile.avatar_url ?? undefined,
+    };
   },
   async logoutUser(): Promise<void> {
     if (useLocal) {
@@ -109,6 +117,7 @@ export const dataApi = {
     if (error) {
       throw new Error(error.message);
     }
+    localApi.setCurrentUserId(undefined);
   },
   async getCurrentUser(): Promise<UserAccount | null> {
     if (useLocal) {
@@ -130,11 +139,13 @@ export const dataApi = {
     if (profileError || !profile) {
       return null;
     }
+    localApi.setCurrentUserId(data.user.id);
     return {
       id: data.user.id,
       name: profile.display_name,
       role: profile.role,
       email: data.user.email ?? "",
+      avatarUrl: profile.avatar_url ?? undefined,
     };
   },
   async listJoinedRooms(): Promise<Room[]> {
@@ -548,5 +559,57 @@ export const dataApi = {
   },
   async addXp(amount: number): Promise<Profile> {
     return localApi.addXp(amount);
+  },
+  async updateAvatar(avatarUrl: string): Promise<UserAccount> {
+    if (useLocal) {
+      return localApi.updateAvatar(avatarUrl);
+    }
+    const supabase = requireSupabase();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      throw new Error("ユーザーが見つかりません。");
+    }
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ avatar_url: avatarUrl })
+      .eq("id", authData.user.id)
+      .select("*")
+      .single();
+    if (error || !data) {
+      throw new Error(error?.message ?? "アイコンの更新に失敗しました。");
+    }
+    return {
+      id: data.id,
+      name: data.display_name,
+      role: data.role,
+      email: authData.user.email ?? "",
+      avatarUrl: data.avatar_url ?? undefined,
+    };
+  },
+  async listUserAvatars(userIds: string[]): Promise<Record<string, string>> {
+    if (!userIds.length) {
+      return {};
+    }
+    if (useLocal) {
+      return localApi.listUserAvatars(userIds);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.listUserAvatars(userIds);
+    }
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, avatar_url")
+      .in("id", userIds);
+    if (error || !data) {
+      throw new Error(error?.message ?? "アイコン情報の取得に失敗しました。");
+    }
+    const result: Record<string, string> = {};
+    for (const row of data) {
+      if (row.avatar_url) {
+        result[row.id] = row.avatar_url;
+      }
+    }
+    return result;
   },
 };

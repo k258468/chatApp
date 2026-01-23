@@ -13,10 +13,22 @@ const role = computed<Role>(() => currentUser.value?.role ?? "student");
 const room = ref<Room | null>(null);
 const questions = ref<Question[]>([]);
 const joinedRooms = ref<Room[]>([]);
-const profile = ref<Profile>({ xp: 0, level: 1, avatarStage: 0 });
+const profile = ref<Profile>({ xp: 0, level: 0, avatarStage: 0 });
 const loading = ref(false);
 const error = ref<string | null>(null);
 const pendingJoinCode = ref<string | null>(null);
+const userAvatars = ref<Record<string, string>>({});
+const avatarInput = ref<HTMLInputElement | null>(null);
+const avatarFrameClass = computed(() => {
+  if (!currentUser.value?.avatarUrl) {
+    return "";
+  }
+  const level = profile.value.level ?? 0;
+  if (level >= 3) return "frame-3";
+  if (level >= 2) return "frame-2";
+  if (level >= 1) return "frame-1";
+  return "";
+});
 
 const setError = (message: string | null) => {
   error.value = message;
@@ -39,6 +51,7 @@ const handleLogin = async (payload: { email: string; password: string }) => {
     }
     currentUser.value = user;
     joinedRooms.value = await dataApi.listJoinedRooms();
+    profile.value = await dataApi.getProfile();
     if (pendingJoinCode.value) {
       const code = pendingJoinCode.value;
       pendingJoinCode.value = null;
@@ -66,6 +79,7 @@ const handleRegister = async (payload: {
       payload.password
     );
     joinedRooms.value = await dataApi.listJoinedRooms();
+    profile.value = await dataApi.getProfile();
   } catch (err) {
     setError((err as Error).message);
   } finally {
@@ -79,6 +93,45 @@ const handleLogout = async () => {
   room.value = null;
   questions.value = [];
   joinedRooms.value = [];
+};
+
+const handleAvatarPick = () => {
+  avatarInput.value?.click();
+};
+
+const handleAvatarChange = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) {
+    return;
+  }
+  if (!file.type.startsWith("image/")) {
+    setError("画像ファイルを選択してください。");
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    setError("2MB以下の画像を選択してください。");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const result = reader.result;
+    if (typeof result !== "string") {
+      setError("画像の読み込みに失敗しました。");
+      return;
+    }
+    try {
+      const updated = await dataApi.updateAvatar(result);
+      currentUser.value = updated;
+      if (updated.avatarUrl) {
+        userAvatars.value = { ...userAvatars.value, [updated.id]: updated.avatarUrl };
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  reader.readAsDataURL(file);
 };
 
 const handleCreateRoom = async (payload: {
@@ -129,6 +182,18 @@ const refreshQuestions = async (options?: { silent?: boolean }) => {
   }
   try {
     questions.value = await dataApi.listQuestions(room.value.id);
+    const ownerIds = new Set<string>();
+    for (const question of questions.value) {
+      if (question.ownerId) {
+        ownerIds.add(question.ownerId);
+      }
+      for (const answer of question.answers) {
+        if (answer.ownerId) {
+          ownerIds.add(answer.ownerId);
+        }
+      }
+    }
+    userAvatars.value = await dataApi.listUserAvatars(Array.from(ownerIds));
   } catch (err) {
     setError((err as Error).message);
   } finally {
@@ -144,16 +209,17 @@ const handleSubmitQuestion = async (payload: { text: string; anonymous?: boolean
   }
   loading.value = true;
   try {
-    const author = payload.anonymous ? undefined : currentUser.value?.name;
+    const isAnonymous = payload.anonymous === true;
+    const author = isAnonymous ? "匿名" : currentUser.value?.name;
     await dataApi.createQuestion(
       room.value.id,
       payload.text,
       author,
-      payload.anonymous,
+      isAnonymous,
       currentUser.value?.id
     );
     if (role.value !== "teacher") {
-      profile.value = await dataApi.addXp(12);
+      profile.value = await dataApi.addXp(1);
     }
     await refreshQuestions();
   } catch (err) {
@@ -255,6 +321,15 @@ const handleReply = async (payload: {
       roleValue,
       ownerId
     );
+    if (currentUser.value) {
+      profile.value = await dataApi.addXp(1);
+    }
+    if (currentUser.value?.avatarUrl && currentUser.value.id) {
+      userAvatars.value = {
+        ...userAvatars.value,
+        [currentUser.value.id]: currentUser.value.avatarUrl,
+      };
+    }
     questions.value = questions.value.map((question) =>
       question.id === payload.questionId
         ? { ...question, answers: [...question.answers, answer] }
@@ -271,9 +346,13 @@ const handleDeleteQuestion = async (payload: { questionId: string }) => {
   if (!confirm("この質問を削除しますか？")) {
     return;
   }
+  const target = questions.value.find((question) => question.id === payload.questionId);
   loading.value = true;
   try {
     await dataApi.deleteQuestion(payload.questionId);
+    if (target && currentUser.value && target.ownerId === currentUser.value.id) {
+      profile.value = await dataApi.addXp(-1);
+    }
     await refreshQuestions();
   } catch (err) {
     setError((err as Error).message);
@@ -286,9 +365,15 @@ const handleDeleteAnswer = async (payload: { answerId: string }) => {
   if (!confirm("この返信を削除しますか？")) {
     return;
   }
+  const target = questions.value
+    .flatMap((question) => question.answers)
+    .find((answer) => answer.id === payload.answerId);
   loading.value = true;
   try {
     await dataApi.deleteAnswer(payload.answerId);
+    if (target && currentUser.value && target.ownerId === currentUser.value.id) {
+      profile.value = await dataApi.addXp(-1);
+    }
     await refreshQuestions();
   } catch (err) {
     setError((err as Error).message);
@@ -306,17 +391,6 @@ const handleOpenRoom = async (target: Room) => {
   room.value = target;
   await refreshQuestions();
 };
-
-const pulseMessage = computed(() => {
-  const openCount = questions.value.filter((question) => question.status === "open").length;
-  if (openCount >= 10) {
-    return "詰まり多発: 重点解説ゾーン";
-  }
-  if (openCount >= 5) {
-    return "詰まり兆候: 速度を少し落とす";
-  }
-  return "理解は順調";
-});
 
 onMounted(() => {
   dataApi.getCurrentUser().then((value) => {
@@ -387,23 +461,37 @@ onUnmounted(() => {
           講義中の質問を集約し、理解度の“見える化”で双方向性を高める。
         </p>
       </div>
-      <div class="pulse">
-        <p class="pulse-label">理解度インジケータ</p>
-        <strong>{{ pulseMessage }}</strong>
-      </div>
     </header>
 
     <main>
       <section class="content">
         <AuthPanel v-if="!currentUser" @login="handleLogin" @register="handleRegister" />
         <div v-else class="account-bar">
-          <div>
-            <p class="eyebrow">Signed in</p>
-            <p class="account-name">
-              {{ currentUser.name }} / {{ role === "teacher" ? "教員" : "学生" }}
-            </p>
+          <div class="account-left">
+            <div class="account-avatar" :class="avatarFrameClass">
+              <div class="account-avatar-inner">
+                <img v-if="currentUser.avatarUrl" :src="currentUser.avatarUrl" alt="アイコン" />
+                <div v-else class="account-avatar-placeholder">?</div>
+              </div>
+            </div>
+            <div>
+              <p class="eyebrow">Signed in</p>
+              <p class="account-name">
+                {{ currentUser.name }} / {{ role === "teacher" ? "教員" : "学生" }}
+              </p>
+            </div>
           </div>
-          <button class="ghost" @click="handleLogout">ログアウト</button>
+          <div class="account-actions">
+            <input
+              ref="avatarInput"
+              class="sr-only"
+              type="file"
+              accept="image/*"
+              @change="handleAvatarChange"
+            />
+            <button class="ghost" @click="handleAvatarPick">アイコンを設定</button>
+            <button class="ghost" @click="handleLogout">ログアウト</button>
+          </div>
         </div>
         <RoomHistory
           v-if="currentUser && !room"
@@ -420,6 +508,8 @@ onUnmounted(() => {
           :profile="profile"
           :loading="loading"
           :current-user-id="currentUser?.id"
+          :user-avatars="userAvatars"
+          :current-user-level="profile.level"
           @refresh="refreshQuestions"
           @exit="exitRoom"
           @submit="handleSubmitQuestion"
@@ -503,21 +593,6 @@ a {
   color: var(--ink-muted);
 }
 
-.pulse {
-  padding: 18px 20px;
-  border-radius: 20px;
-  background: rgba(15, 23, 42, 0.85);
-  color: white;
-  box-shadow: var(--shadow);
-}
-
-.pulse-label {
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 0.7;
-}
-
 .role-panel {
   display: grid;
   gap: 12px;
@@ -569,9 +644,111 @@ a {
   box-shadow: var(--shadow-soft);
 }
 
+.account-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.08);
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  box-sizing: border-box;
+  position: relative;
+}
+
+.account-avatar-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.account-avatar-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.account-avatar-placeholder {
+  font-weight: 700;
+  color: rgba(31, 41, 55, 0.6);
+}
+
+.account-avatar.frame-1 {
+  border: none;
+  border-radius: 50%;
+}
+
+.account-avatar.frame-2 {
+  border: none;
+  border-radius: 50%;
+}
+
+.account-avatar.frame-3 {
+  border: none;
+  border-radius: 50%;
+}
+
+.account-avatar::after {
+  content: "";
+  position: absolute;
+  inset: -24px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: transparent;
+}
+
+.account-avatar.frame-1::after {
+  background-image: url("/images/frame-level1.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.account-avatar.frame-2::after {
+  background-image: url("/images/frame-level2.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.account-avatar.frame-3::after {
+  background-image: url("/images/frame-level3.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 .account-name {
   margin: 4px 0 0;
   font-weight: 600;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
 
 .toast {

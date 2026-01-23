@@ -6,6 +6,8 @@ const props = defineProps<{
   role: Role;
   questions: Question[];
   currentUserId?: string;
+  userAvatars?: Record<string, string>;
+  currentUserLevel?: number;
 }>();
 
 const emit = defineEmits<{
@@ -34,6 +36,20 @@ const canDeleteAnswer = (answer: Question["answers"][number]) =>
   (props.role === "student" && answer.ownerId === props.currentUserId) ||
   props.role === "teacher" ||
   props.role === "ta";
+const avatarForQuestion = (question: Question) =>
+  question.ownerId ? props.userAvatars?.[question.ownerId] : undefined;
+const avatarForAnswer = (answer: Question["answers"][number]) =>
+  answer.ownerId ? props.userAvatars?.[answer.ownerId] : undefined;
+const frameClassForOwner = (ownerId?: string) => {
+  if (!ownerId || ownerId !== props.currentUserId) {
+    return "";
+  }
+  const level = props.currentUserLevel ?? 0;
+  if (level >= 3) return "frame-3";
+  if (level >= 2) return "frame-2";
+  if (level >= 1) return "frame-1";
+  return "";
+};
 
 const submitReply = (questionId: string) => {
   const text = replyText.value[questionId]?.trim();
@@ -63,6 +79,19 @@ const submitReply = (questionId: string) => {
       <div v-if="question.answers.length" class="answers">
         <div v-for="answer in question.answers" :key="answer.id" class="answer">
           <div class="answer-meta">
+            <div
+              v-if="answer.author !== '匿名' && avatarForAnswer(answer)"
+              class="avatar-frame"
+              :class="frameClassForOwner(answer.ownerId)"
+            >
+              <div class="avatar-inner">
+                <img
+                  class="answer-avatar"
+                  :src="avatarForAnswer(answer)"
+                  alt="返信者アイコン"
+                />
+              </div>
+            </div>
             <span class="answer-author">{{ answer.author || "匿名" }}</span>
             <span class="answer-role">{{ roleLabel(answer.role) }}</span>
             <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
@@ -106,9 +135,24 @@ const submitReply = (questionId: string) => {
         匿名で返信する
       </label>
       <div class="footer">
-        <span v-if="question.anonymous" class="author">匿名</span>
-        <span v-else-if="question.author" class="author">{{ question.author }}</span>
-        <span v-else class="author">名無し</span>
+        <div class="author-info">
+          <div
+            v-if="!question.anonymous && avatarForQuestion(question)"
+            class="avatar-frame"
+            :class="frameClassForOwner(question.ownerId)"
+          >
+            <div class="avatar-inner">
+              <img
+                class="author-avatar"
+                :src="avatarForQuestion(question)"
+                alt="投稿者アイコン"
+              />
+            </div>
+          </div>
+          <span v-if="question.anonymous" class="author">匿名</span>
+          <span v-else-if="question.author" class="author">{{ question.author }}</span>
+          <span v-else class="author">名無し</span>
+        </div>
         <div class="actions">
           <button
             class="reaction"
@@ -236,6 +280,63 @@ const submitReply = (questionId: string) => {
   margin-bottom: 6px;
 }
 
+.avatar-frame {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border-radius: 50%;
+  position: relative;
+  overflow: visible;
+}
+
+.avatar-frame::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: transparent;
+}
+
+.avatar-frame.frame-1::after {
+  background-image: url("/images/frame-level1.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.avatar-frame.frame-2::after {
+  background-image: url("/images/frame-level2.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.avatar-frame.frame-3::after {
+  background-image: url("/images/frame-level3.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.avatar-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.answer-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .answer-author {
   font-weight: 600;
   color: var(--ink);
@@ -301,6 +402,19 @@ const submitReply = (questionId: string) => {
   align-items: center;
   font-size: 12px;
   color: var(--ink-muted);
+}
+
+.author-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.author-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .actions {

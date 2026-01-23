@@ -40,6 +40,7 @@ export interface UserAccount {
   name: string;
   role: Role;
   email: string;
+  avatarUrl?: string;
 }
 
 export interface Answer {
