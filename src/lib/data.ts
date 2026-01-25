@@ -422,6 +422,44 @@ export const dataApi = {
     }
     return data ? mapQuestion(data) : null;
   },
+  async updateQuestionText(questionId: string, text: string): Promise<Question | null> {
+    if (useLocal) {
+      return localApi.updateQuestionText(questionId, text);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.updateQuestionText(questionId, text);
+    }
+    const { data, error } = await supabase
+      .from("questions")
+      .update({ text })
+      .eq("id", questionId)
+      .select("*, answers(*)")
+      .maybeSingle();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return data ? mapQuestion(data) : null;
+  },
+  async updateAnswerText(answerId: string, text: string): Promise<Answer | null> {
+    if (useLocal) {
+      return localApi.updateAnswerText(answerId, text);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.updateAnswerText(answerId, text);
+    }
+    const { data, error } = await supabase
+      .from("answers")
+      .update({ text })
+      .eq("id", answerId)
+      .select()
+      .maybeSingle();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return data ? mapAnswer(data) : null;
+  },
   async addQuestionReaction(
     questionId: string,
     type: keyof Reactions,

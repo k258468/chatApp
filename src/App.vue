@@ -423,6 +423,30 @@ const handleDeleteAnswer = async (payload: { answerId: string }) => {
   }
 };
 
+const handleUpdateQuestion = async (payload: { questionId: string; text: string }) => {
+  loading.value = true;
+  try {
+    await dataApi.updateQuestionText(payload.questionId, payload.text);
+    await refreshQuestions();
+  } catch (err) {
+    setError((err as Error).message);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleUpdateAnswer = async (payload: { answerId: string; text: string }) => {
+  loading.value = true;
+  try {
+    await dataApi.updateAnswerText(payload.answerId, payload.text);
+    await refreshQuestions();
+  } catch (err) {
+    setError((err as Error).message);
+  } finally {
+    loading.value = false;
+  }
+};
+
 const exitRoom = () => {
   room.value = null;
   questions.value = [];
@@ -580,6 +604,8 @@ onUnmounted(() => {
           @reply="handleReply"
           @delete-question="handleDeleteQuestion"
           @delete-answer="handleDeleteAnswer"
+          @update-question="handleUpdateQuestion"
+          @update-answer="handleUpdateAnswer"
         />
       </section>
     </main>

@@ -20,12 +20,18 @@ const emit = defineEmits<{
   (e: "reply", payload: { questionId: string; text: string; anonymous?: boolean }): void;
   (e: "delete-question", payload: { questionId: string }): void;
   (e: "delete-answer", payload: { answerId: string }): void;
+  (e: "update-question", payload: { questionId: string; text: string }): void;
+  (e: "update-answer", payload: { answerId: string; text: string }): void;
 }>();
 
 const statusLabel = (status: string) => (status === "resolved" ? "回答済み" : "受付中");
 const replyText = ref<Record<string, string>>({});
 const replyAnonymous = ref<Record<string, boolean>>({});
 const activeTab = ref<Record<string, "question" | "answers">>({});
+const editingQuestionId = ref<string | null>(null);
+const editingAnswerId = ref<string | null>(null);
+const editQuestionText = ref<Record<string, string>>({});
+const editAnswerText = ref<Record<string, string>>({});
 const roleLabel = (role: Role) => {
   if (role === "teacher") return "教員";
   if (role === "ta") return "TA";
@@ -35,10 +41,12 @@ const canDeleteQuestion = (question: Question) =>
   (props.role === "student" && question.ownerId === props.currentUserId) ||
   props.role === "teacher" ||
   props.role === "ta";
+const canEditQuestion = (question: Question) => canDeleteQuestion(question);
 const canDeleteAnswer = (answer: Question["answers"][number]) =>
   (props.role === "student" && answer.ownerId === props.currentUserId) ||
   props.role === "teacher" ||
   props.role === "ta";
+const canEditAnswer = (answer: Question["answers"][number]) => canDeleteAnswer(answer);
 const avatarForQuestion = (question: Question) =>
   question.ownerId ? props.userAvatars?.[question.ownerId] ?? props.defaultAvatarUrl : undefined;
 const avatarForAnswer = (answer: Question["answers"][number]) =>
@@ -70,6 +78,42 @@ const submitReply = (questionId: string) => {
 const isAnswersOpen = (questionId: string) => activeTab.value[questionId] === "answers";
 const toggleAnswers = (questionId: string) => {
   activeTab.value[questionId] = isAnswersOpen(questionId) ? "question" : "answers";
+};
+
+const startEditQuestion = (question: Question) => {
+  editingQuestionId.value = question.id;
+  editQuestionText.value[question.id] = question.text;
+};
+
+const cancelEditQuestion = () => {
+  editingQuestionId.value = null;
+};
+
+const saveEditQuestion = (question: Question) => {
+  const text = editQuestionText.value[question.id]?.trim();
+  if (!text) {
+    return;
+  }
+  emit("update-question", { questionId: question.id, text });
+  editingQuestionId.value = null;
+};
+
+const startEditAnswer = (answer: Question["answers"][number]) => {
+  editingAnswerId.value = answer.id;
+  editAnswerText.value[answer.id] = answer.text;
+};
+
+const cancelEditAnswer = () => {
+  editingAnswerId.value = null;
+};
+
+const saveEditAnswer = (answer: Question["answers"][number]) => {
+  const text = editAnswerText.value[answer.id]?.trim();
+  if (!text) {
+    return;
+  }
+  emit("update-answer", { answerId: answer.id, text });
+  editingAnswerId.value = null;
 };
 </script>
 
@@ -112,7 +156,16 @@ const toggleAnswers = (questionId: string) => {
           </button>
         </div>
       </div>
-      <p class="text">{{ question.text }}</p>
+      <div v-if="editingQuestionId === question.id" class="edit-block">
+        <textarea v-model="editQuestionText[question.id]" rows="3" />
+        <div class="edit-actions">
+          <button class="action" type="button" @click="saveEditQuestion(question)">保存</button>
+          <button class="action ghost" type="button" @click="cancelEditQuestion">
+            キャンセル
+          </button>
+        </div>
+      </div>
+      <p v-else class="text">{{ question.text }}</p>
       <div class="footer">
         <button
           class="reaction"
@@ -142,6 +195,13 @@ const toggleAnswers = (questionId: string) => {
             納得を取り消す
           </button>
         </template>
+        <button
+          v-if="canEditQuestion(question)"
+          class="action ghost"
+          @click="startEditQuestion(question)"
+        >
+          編集
+        </button>
         <button
           v-if="canDeleteQuestion(question)"
           class="action danger"
@@ -185,7 +245,18 @@ const toggleAnswers = (questionId: string) => {
               <span class="answer-role">{{ roleLabel(answer.role) }}</span>
               <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
             </div>
-            <p class="answer-text">{{ answer.text }}</p>
+            <div v-if="editingAnswerId === answer.id" class="edit-block">
+              <textarea v-model="editAnswerText[answer.id]" rows="3" />
+              <div class="edit-actions">
+                <button class="action" type="button" @click="saveEditAnswer(answer)">
+                  保存
+                </button>
+                <button class="action ghost" type="button" @click="cancelEditAnswer">
+                  キャンセル
+                </button>
+              </div>
+            </div>
+            <p v-else class="answer-text">{{ answer.text }}</p>
             <div class="answer-actions">
               <button
                 class="reaction"
@@ -198,6 +269,13 @@ const toggleAnswers = (questionId: string) => {
                 @click="emit('react-answer', { answerId: answer.id, type: 'thanks' })"
               >
                 参考になった {{ answer.reactions.thanks }}
+              </button>
+              <button
+                v-if="canEditAnswer(answer)"
+                class="action ghost"
+                @click="startEditAnswer(answer)"
+              >
+                編集
               </button>
               <button
                 v-if="canDeleteAnswer(answer)"
@@ -415,6 +493,22 @@ const toggleAnswers = (questionId: string) => {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.edit-block textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  font-size: 13px;
+  background: white;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
 }
 
 .reply-anon {

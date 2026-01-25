@@ -27,6 +27,8 @@ const emit = defineEmits<{
   (e: "reply", payload: { questionId: string; text: string }): void;
   (e: "delete-question", payload: { questionId: string }): void;
   (e: "delete-answer", payload: { answerId: string }): void;
+  (e: "update-question", payload: { questionId: string; text: string }): void;
+  (e: "update-answer", payload: { answerId: string; text: string }): void;
 }>();
 
 const text = ref("");
@@ -163,6 +165,8 @@ const applyTemplate = (value: string) => {
         @reply="emit('reply', $event)"
         @delete-question="emit('delete-question', $event)"
         @delete-answer="emit('delete-answer', $event)"
+        @update-question="emit('update-question', $event)"
+        @update-answer="emit('update-answer', $event)"
       />
     </div>
   </section>

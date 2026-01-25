@@ -387,6 +387,29 @@ export const localApi = {
     saveStore(store);
     return target;
   },
+  async updateQuestionText(questionId: string, text: string): Promise<Question | null> {
+    const store = loadStore();
+    const target = store.questions.find((question) => question.id === questionId);
+    if (!target) {
+      return null;
+    }
+    target.text = text;
+    saveStore(store);
+    return target;
+  },
+  async updateAnswerText(answerId: string, text: string): Promise<Answer | null> {
+    const store = loadStore();
+    for (const question of store.questions) {
+      const target = question.answers?.find((answer) => answer.id === answerId);
+      if (!target) {
+        continue;
+      }
+      target.text = text;
+      saveStore(store);
+      return target;
+    }
+    return null;
+  },
   async deleteQuestion(questionId: string): Promise<boolean> {
     const store = loadStore();
     const targetIndex = store.questions.findIndex((question) => question.id === questionId);

@@ -160,6 +160,15 @@ create policy "answers read" on answers
 create policy "answers insert" on answers
   for insert with check (auth.uid() is not null);
 
+create policy "answers update" on answers
+  for update using (
+    auth.uid() = owner_id
+    or exists (
+      select 1 from profiles p
+      where p.id = auth.uid() and p.role in ('teacher', 'ta')
+    )
+  );
+
 create policy "answers delete" on answers
   for delete using (
     auth.uid() = owner_id
@@ -199,6 +208,15 @@ alter table profiles add column if not exists avatar_url text;
 
 create policy "profiles public read" on profiles
   for select using (true);
+
+create policy "answers update" on answers
+  for update using (
+    auth.uid() = owner_id
+    or exists (
+      select 1 from profiles p
+      where p.id = auth.uid() and p.role in ('teacher', 'ta')
+    )
+  );
 ```
 
 ## アカウント管理 (ローカル)
