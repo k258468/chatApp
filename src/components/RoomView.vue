@@ -12,6 +12,7 @@ const props = defineProps<{
   currentUserId?: string;
   userAvatars: Record<string, string>;
   currentUserLevel: number;
+  defaultAvatarUrl: string;
 }>();
 
 const emit = defineEmits<{
@@ -107,7 +108,6 @@ const applyTemplate = (value: string) => {
       <div class="panel">
         <div class="panel-header">
           <h3>質問を投稿</h3>
-          <button class="ghost" @click="emit('refresh')">更新</button>
         </div>
         <form class="form" @submit.prevent="submit">
           <label>
@@ -152,6 +152,7 @@ const applyTemplate = (value: string) => {
         :questions="questions"
         :current-user-id="currentUserId"
         :user-avatars="userAvatars"
+        :default-avatar-url="defaultAvatarUrl"
         :current-user-level="currentUserLevel"
         @resolve="emit('resolve', $event)"
         @reopen="emit('reopen', $event)"

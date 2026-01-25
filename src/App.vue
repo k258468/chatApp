@@ -9,6 +9,8 @@ import RoomHistory from "./components/RoomHistory.vue";
 import RoomView from "./components/RoomView.vue";
 
 const currentUser = ref<UserAccount | null>(null);
+const baseUrl = import.meta.env.BASE_URL;
+const defaultAvatarUrl = `${baseUrl}images/default-avatar.png`;
 const role = computed<Role>(() => currentUser.value?.role ?? "student");
 const room = ref<Room | null>(null);
 const questions = ref<Question[]>([]);
@@ -19,8 +21,13 @@ const error = ref<string | null>(null);
 const pendingJoinCode = ref<string | null>(null);
 const userAvatars = ref<Record<string, string>>({});
 const avatarInput = ref<HTMLInputElement | null>(null);
+const profileOpen = ref(false);
+const displayNameDraft = ref("");
+const avatarUrlForCurrent = computed(
+  () => currentUser.value?.avatarUrl ?? defaultAvatarUrl
+);
 const avatarFrameClass = computed(() => {
-  if (!currentUser.value?.avatarUrl) {
+  if (!currentUser.value) {
     return "";
   }
   const level = profile.value.level ?? 0;
@@ -50,6 +57,7 @@ const handleLogin = async (payload: { email: string; password: string }) => {
       return;
     }
     currentUser.value = user;
+    displayNameDraft.value = user.name;
     joinedRooms.value = await dataApi.listJoinedRooms();
     profile.value = await dataApi.getProfile();
     if (pendingJoinCode.value) {
@@ -69,6 +77,7 @@ const handleRegister = async (payload: {
   role: Role;
   email: string;
   password: string;
+  avatarUrl?: string;
 }) => {
   loading.value = true;
   try {
@@ -76,8 +85,10 @@ const handleRegister = async (payload: {
       payload.name,
       payload.role,
       payload.email,
-      payload.password
+      payload.password,
+      payload.avatarUrl
     );
+    displayNameDraft.value = currentUser.value.name;
     joinedRooms.value = await dataApi.listJoinedRooms();
     profile.value = await dataApi.getProfile();
   } catch (err) {
@@ -93,6 +104,7 @@ const handleLogout = async () => {
   room.value = null;
   questions.value = [];
   joinedRooms.value = [];
+  profileOpen.value = false;
 };
 
 const handleAvatarPick = () => {
@@ -124,6 +136,7 @@ const handleAvatarChange = (event: Event) => {
     try {
       const updated = await dataApi.updateAvatar(result);
       currentUser.value = updated;
+      displayNameDraft.value = updated.name;
       if (updated.avatarUrl) {
         userAvatars.value = { ...userAvatars.value, [updated.id]: updated.avatarUrl };
       }
@@ -132,6 +145,27 @@ const handleAvatarChange = (event: Event) => {
     }
   };
   reader.readAsDataURL(file);
+};
+
+const toggleProfile = () => {
+  profileOpen.value = !profileOpen.value;
+  if (currentUser.value) {
+    displayNameDraft.value = currentUser.value.name;
+  }
+};
+
+const handleProfileSave = async () => {
+  const trimmed = displayNameDraft.value.trim();
+  if (!trimmed || !currentUser.value) {
+    return;
+  }
+  try {
+    const updated = await dataApi.updateDisplayName(trimmed);
+    currentUser.value = updated;
+    displayNameDraft.value = updated.name;
+  } catch (err) {
+    setError((err as Error).message);
+  }
 };
 
 const handleCreateRoom = async (payload: {
@@ -465,13 +499,17 @@ onUnmounted(() => {
 
     <main>
       <section class="content">
-        <AuthPanel v-if="!currentUser" @login="handleLogin" @register="handleRegister" />
+        <AuthPanel
+          v-if="!currentUser"
+          :default-avatar-url="defaultAvatarUrl"
+          @login="handleLogin"
+          @register="handleRegister"
+        />
         <div v-else class="account-bar">
           <div class="account-left">
             <div class="account-avatar" :class="avatarFrameClass">
               <div class="account-avatar-inner">
-                <img v-if="currentUser.avatarUrl" :src="currentUser.avatarUrl" alt="アイコン" />
-                <div v-else class="account-avatar-placeholder">?</div>
+                <img :src="avatarUrlForCurrent" alt="アイコン" />
               </div>
             </div>
             <div>
@@ -489,7 +527,20 @@ onUnmounted(() => {
               accept="image/*"
               @change="handleAvatarChange"
             />
+            <button class="ghost" @click="toggleProfile">プロフィール</button>
+          </div>
+        </div>
+        <div v-if="currentUser && profileOpen" class="profile-panel">
+          <div class="profile-header">
+            <h3>プロフィール</h3>
+          </div>
+          <label class="profile-field">
+            <span>ニックネーム</span>
+            <input v-model="displayNameDraft" type="text" />
+          </label>
+          <div class="profile-actions">
             <button class="ghost" @click="handleAvatarPick">アイコンを設定</button>
+            <button class="primary" @click="handleProfileSave">保存</button>
             <button class="ghost" @click="handleLogout">ログアウト</button>
           </div>
         </div>
@@ -509,6 +560,7 @@ onUnmounted(() => {
           :loading="loading"
           :current-user-id="currentUser?.id"
           :user-avatars="userAvatars"
+          :default-avatar-url="defaultAvatarUrl"
           :current-user-level="profile.level"
           @refresh="refreshQuestions"
           @exit="exitRoom"
@@ -653,6 +705,48 @@ a {
 .account-actions {
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.profile-panel {
+  margin-top: 16px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: white;
+  border: 1px solid rgba(31, 41, 55, 0.08);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 12px;
+}
+
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.profile-header h3 {
+  margin: 0;
+}
+
+.profile-field span {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+}
+
+.profile-field input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  font-size: 14px;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 

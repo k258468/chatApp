@@ -97,7 +97,8 @@ export const localApi = {
     name: string,
     role: Role,
     email: string,
-    password: string
+    password: string,
+    avatarUrl?: string
   ): Promise<UserAccount> {
     const store = loadStore();
     const existing = store.users.find(
@@ -112,7 +113,7 @@ export const localApi = {
       const { password: _password, ...user } = existing;
       return user;
     }
-    const user = { id: makeId(), name, role, email, password, avatarUrl: undefined };
+    const user = { id: makeId(), name, role, email, password, avatarUrl };
     store.users.push(user);
     store.currentUserId = user.id;
     store.profiles[user.id] = { xp: 0, level: 0, avatarStage: 0 };
@@ -161,6 +162,20 @@ export const localApi = {
       throw new Error("ユーザーが見つかりません。");
     }
     store.users[userIndex] = { ...store.users[userIndex], avatarUrl };
+    saveStore(store);
+    const { password: _password, ...account } = store.users[userIndex];
+    return account;
+  },
+  async updateDisplayName(displayName: string): Promise<UserAccount> {
+    const store = loadStore();
+    if (!store.currentUserId) {
+      throw new Error("ユーザーが見つかりません。");
+    }
+    const userIndex = store.users.findIndex((entry) => entry.id === store.currentUserId);
+    if (userIndex === -1) {
+      throw new Error("ユーザーが見つかりません。");
+    }
+    store.users[userIndex] = { ...store.users[userIndex], name: displayName };
     saveStore(store);
     const { password: _password, ...account } = store.users[userIndex];
     return account;

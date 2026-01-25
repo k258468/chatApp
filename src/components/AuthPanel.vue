@@ -2,9 +2,19 @@
 import { ref } from "vue";
 import type { Role } from "../types";
 
+const props = defineProps<{
+  defaultAvatarUrl: string;
+}>();
+
 const emit = defineEmits<{
   (e: "login", payload: { email: string; password: string }): void;
-  (e: "register", payload: { name: string; role: Role; email: string; password: string }): void;
+  (e: "register", payload: {
+    name: string;
+    role: Role;
+    email: string;
+    password: string;
+    avatarUrl?: string;
+  }): void;
 }>();
 
 const mode = ref<"login" | "register">("login");
@@ -12,6 +22,34 @@ const name = ref("");
 const email = ref("");
 const password = ref("");
 const role = ref<Role>("student");
+const avatarInput = ref<HTMLInputElement | null>(null);
+const avatarUrl = ref<string | undefined>(undefined);
+
+const pickAvatar = () => {
+  avatarInput.value?.click();
+};
+
+const handleAvatarChange = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) {
+    return;
+  }
+  if (!file.type.startsWith("image/")) {
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (typeof reader.result === "string") {
+      avatarUrl.value = reader.result;
+    }
+  };
+  reader.readAsDataURL(file);
+};
 
 const submit = () => {
   const trimmedEmail = email.value.trim();
@@ -31,6 +69,7 @@ const submit = () => {
       role: role.value,
       email: trimmedEmail,
       password: trimmedPassword,
+      avatarUrl: avatarUrl.value,
     });
   }
 };
@@ -54,6 +93,27 @@ const submit = () => {
         <span>表示名</span>
         <input v-model="name" type="text" placeholder="例: Yuki" />
       </label>
+      <div v-if="mode === 'register'" class="avatar-picker">
+        <span class="label">アイコン設定</span>
+        <div class="avatar-row">
+          <img
+            class="avatar-preview"
+            :src="avatarUrl || props.defaultAvatarUrl"
+            alt="アイコンプレビュー"
+          />
+          <div class="avatar-actions">
+            <input
+              ref="avatarInput"
+              class="sr-only"
+              type="file"
+              accept="image/*"
+              @change="handleAvatarChange"
+            />
+            <button class="ghost" type="button" @click="pickAvatar">画像を選ぶ</button>
+            <p class="hint">未設定の場合はデフォルトアイコンになります</p>
+          </div>
+        </div>
+      </div>
       <label>
         <span>メールアドレス</span>
         <input v-model="email" type="email" placeholder="you@example.com" />
@@ -133,6 +193,31 @@ const submit = () => {
   gap: 16px;
 }
 
+.avatar-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.avatar-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.avatar-preview {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  background: white;
+}
+
+.avatar-actions {
+  display: grid;
+  gap: 6px;
+}
+
 label span {
   display: block;
   font-size: 13px;
@@ -163,5 +248,20 @@ select {
 
 .primary:hover {
   transform: translateY(-2px);
+}
+
+.ghost {
+  border: 1px solid rgba(31, 41, 55, 0.2);
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: 0;
 }
 </style>

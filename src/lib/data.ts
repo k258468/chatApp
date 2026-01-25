@@ -68,10 +68,11 @@ export const dataApi = {
     name: string,
     role: Role,
     email: string,
-    password: string
+    password: string,
+    avatarUrl?: string
   ): Promise<UserAccount> {
     if (useLocal) {
-      return localApi.registerUser(name, role, email, password);
+      return localApi.registerUser(name, role, email, password, avatarUrl);
     }
     const supabase = requireSupabase();
     const { data, error } = await supabase.auth.signUp({
@@ -82,13 +83,20 @@ export const dataApi = {
     if (error || !data.user) {
       throw new Error(error?.message ?? "Failed to register");
     }
-    const profilePayload = { id: data.user.id, display_name: name, role, xp: 0, level: 0 };
+    const profilePayload = {
+      id: data.user.id,
+      display_name: name,
+      role,
+      xp: 0,
+      level: 0,
+      avatar_url: avatarUrl ?? null,
+    };
     const { error: profileError } = await supabase.from("profiles").upsert(profilePayload);
     if (profileError) {
       throw new Error(profileError.message);
     }
     localApi.setCurrentUserId(data.user.id);
-    return { id: data.user.id, name, role, email };
+    return { id: data.user.id, name, role, email, avatarUrl: avatarUrl ?? undefined };
   },
   async loginUser(email: string, password: string): Promise<UserAccount | null> {
     if (useLocal) {
@@ -635,6 +643,32 @@ export const dataApi = {
       .single();
     if (error || !data) {
       throw new Error(error?.message ?? "アイコンの更新に失敗しました。");
+    }
+    return {
+      id: data.id,
+      name: data.display_name,
+      role: data.role,
+      email: authData.user.email ?? "",
+      avatarUrl: data.avatar_url ?? undefined,
+    };
+  },
+  async updateDisplayName(displayName: string): Promise<UserAccount> {
+    if (useLocal) {
+      return localApi.updateDisplayName(displayName);
+    }
+    const supabase = requireSupabase();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      throw new Error("ユーザーが見つかりません。");
+    }
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ display_name: displayName })
+      .eq("id", authData.user.id)
+      .select("*")
+      .single();
+    if (error || !data) {
+      throw new Error(error?.message ?? "表示名の更新に失敗しました。");
     }
     return {
       id: data.id,

@@ -8,6 +8,7 @@ const props = defineProps<{
   currentUserId?: string;
   userAvatars?: Record<string, string>;
   currentUserLevel?: number;
+  defaultAvatarUrl: string;
 }>();
 
 const emit = defineEmits<{
@@ -38,9 +39,9 @@ const canDeleteAnswer = (answer: Question["answers"][number]) =>
   props.role === "teacher" ||
   props.role === "ta";
 const avatarForQuestion = (question: Question) =>
-  question.ownerId ? props.userAvatars?.[question.ownerId] : undefined;
+  question.ownerId ? props.userAvatars?.[question.ownerId] ?? props.defaultAvatarUrl : undefined;
 const avatarForAnswer = (answer: Question["answers"][number]) =>
-  answer.ownerId ? props.userAvatars?.[answer.ownerId] : undefined;
+  answer.ownerId ? props.userAvatars?.[answer.ownerId] ?? props.defaultAvatarUrl : undefined;
 const frameClassForOwner = (ownerId?: string) => {
   if (!ownerId || ownerId !== props.currentUserId) {
     return "";
