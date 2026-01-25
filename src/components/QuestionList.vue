@@ -23,6 +23,7 @@ const emit = defineEmits<{
 const statusLabel = (status: string) => (status === "resolved" ? "回答済み" : "受付中");
 const replyText = ref<Record<string, string>>({});
 const replyAnonymous = ref<Record<string, boolean>>({});
+const activeTab = ref<Record<string, "question" | "answers">>({});
 const roleLabel = (role: Role) => {
   if (role === "teacher") return "教員";
   if (role === "ta") return "TA";
@@ -60,6 +61,11 @@ const submitReply = (questionId: string) => {
   replyText.value[questionId] = "";
   replyAnonymous.value[questionId] = false;
 };
+
+const isAnswersOpen = (questionId: string) => activeTab.value[questionId] === "answers";
+const toggleAnswers = (questionId: string) => {
+  activeTab.value[questionId] = isAnswersOpen(questionId) ? "question" : "answers";
+};
 </script>
 
 <template>
@@ -75,66 +81,7 @@ const submitReply = (questionId: string) => {
         <span class="badge" :class="question.status">{{ statusLabel(question.status) }}</span>
         <span class="time">{{ new Date(question.createdAt).toLocaleTimeString() }}</span>
       </div>
-      <p class="text">{{ question.text }}</p>
-      <div v-if="question.answers.length" class="answers">
-        <div v-for="answer in question.answers" :key="answer.id" class="answer">
-          <div class="answer-meta">
-            <div
-              v-if="answer.author !== '匿名' && avatarForAnswer(answer)"
-              class="avatar-frame"
-              :class="frameClassForOwner(answer.ownerId)"
-            >
-              <div class="avatar-inner">
-                <img
-                  class="answer-avatar"
-                  :src="avatarForAnswer(answer)"
-                  alt="返信者アイコン"
-                />
-              </div>
-            </div>
-            <span class="answer-author">{{ answer.author || "匿名" }}</span>
-            <span class="answer-role">{{ roleLabel(answer.role) }}</span>
-            <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
-          </div>
-          <p class="answer-text">{{ answer.text }}</p>
-          <div class="answer-actions">
-            <button
-              class="reaction"
-              @click="emit('react-answer', { answerId: answer.id, type: 'like' })"
-            >
-              いいね {{ answer.reactions.like }}
-            </button>
-            <button
-              class="reaction"
-              @click="emit('react-answer', { answerId: answer.id, type: 'thanks' })"
-            >
-              参考になった {{ answer.reactions.thanks }}
-            </button>
-            <button
-              v-if="canDeleteAnswer(answer)"
-              class="action danger"
-              @click="emit('delete-answer', { answerId: answer.id })"
-            >
-              返信削除
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="reply">
-        <input
-          v-model="replyText[question.id]"
-          type="text"
-          placeholder="回答・返信を入力"
-        />
-        <button class="reply-btn" type="button" @click="submitReply(question.id)">
-          返信
-        </button>
-      </div>
-      <label class="reply-anon">
-        <input v-model="replyAnonymous[question.id]" type="checkbox" />
-        匿名で返信する
-      </label>
-      <div class="footer">
+      <div class="author-block">
         <div class="author-info">
           <div
             v-if="!question.anonymous && avatarForQuestion(question)"
@@ -142,68 +89,136 @@ const submitReply = (questionId: string) => {
             :class="frameClassForOwner(question.ownerId)"
           >
             <div class="avatar-inner">
-              <img
-                class="author-avatar"
-                :src="avatarForQuestion(question)"
-                alt="投稿者アイコン"
-              />
+              <img class="author-avatar" :src="avatarForQuestion(question)" alt="投稿者アイコン" />
             </div>
           </div>
           <span v-if="question.anonymous" class="author">匿名</span>
           <span v-else-if="question.author" class="author">{{ question.author }}</span>
           <span v-else class="author">名無し</span>
         </div>
-        <div class="actions">
+        <div class="tabs">
           <button
-            class="reaction"
-            @click="emit('react', { questionId: question.id, type: 'like' })"
+            class="tab"
+            :class="{ active: isAnswersOpen(question.id) }"
+            type="button"
+            @click="toggleAnswers(question.id)"
           >
-            いいね {{ question.reactions.like }}
+            返信 {{ question.answers.length }}
           </button>
+        </div>
+      </div>
+      <p class="text">{{ question.text }}</p>
+      <div class="footer">
+        <button
+          class="reaction"
+          @click="emit('react', { questionId: question.id, type: 'like' })"
+        >
+          いいね {{ question.reactions.like }}
+        </button>
+        <button
+          class="reaction"
+          @click="emit('react', { questionId: question.id, type: 'thanks' })"
+        >
+          参考になった {{ question.reactions.thanks }}
+        </button>
+        <template v-if="role === 'student' && question.ownerId === props.currentUserId">
           <button
-            class="reaction"
-            @click="emit('react', { questionId: question.id, type: 'thanks' })"
-          >
-            参考になった {{ question.reactions.thanks }}
-          </button>
-          <template v-if="role === 'student' && question.ownerId === props.currentUserId">
-            <button
-              v-if="question.status === 'open'"
-              class="action ghost"
-              @click="emit('resolve', { questionId: question.id })"
-            >
-              納得
-            </button>
-            <button
-              v-else
-              class="action ghost"
-              @click="emit('reopen', { questionId: question.id })"
-            >
-              納得を取り消す
-            </button>
-          </template>
-          <button
-            v-if="canDeleteQuestion(question)"
-            class="action danger"
-            @click="emit('delete-question', { questionId: question.id })"
-          >
-            質問削除
-          </button>
-          <button
-            v-if="(role === 'teacher' || role === 'ta') && question.status === 'open'"
-            class="action"
+            v-if="question.status === 'open'"
+            class="action ghost"
             @click="emit('resolve', { questionId: question.id })"
           >
-            回答済み
+            納得
           </button>
           <button
-            v-if="(role === 'teacher' || role === 'ta') && question.status === 'resolved'"
+            v-else
             class="action ghost"
             @click="emit('reopen', { questionId: question.id })"
           >
-            再オープン
+            納得を取り消す
+          </button>
+        </template>
+        <button
+          v-if="canDeleteQuestion(question)"
+          class="action danger"
+          @click="emit('delete-question', { questionId: question.id })"
+        >
+          質問削除
+        </button>
+        <button
+          v-if="(role === 'teacher' || role === 'ta') && question.status === 'open'"
+          class="action"
+          @click="emit('resolve', { questionId: question.id })"
+        >
+          回答済み
+        </button>
+        <button
+          v-if="(role === 'teacher' || role === 'ta') && question.status === 'resolved'"
+          class="action ghost"
+          @click="emit('reopen', { questionId: question.id })"
+        >
+          再オープン
+        </button>
+      </div>
+      <div v-if="isAnswersOpen(question.id)">
+        <div v-if="question.answers.length" class="answers">
+          <div v-for="answer in question.answers" :key="answer.id" class="answer">
+            <div class="answer-meta">
+              <div
+                v-if="answer.author !== '匿名' && avatarForAnswer(answer)"
+                class="avatar-frame"
+                :class="frameClassForOwner(answer.ownerId)"
+              >
+                <div class="avatar-inner">
+                  <img
+                    class="answer-avatar"
+                    :src="avatarForAnswer(answer)"
+                    alt="返信者アイコン"
+                  />
+                </div>
+              </div>
+              <span class="answer-author">{{ answer.author || "匿名" }}</span>
+              <span class="answer-role">{{ roleLabel(answer.role) }}</span>
+              <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
+            </div>
+            <p class="answer-text">{{ answer.text }}</p>
+            <div class="answer-actions">
+              <button
+                class="reaction"
+                @click="emit('react-answer', { answerId: answer.id, type: 'like' })"
+              >
+                いいね {{ answer.reactions.like }}
+              </button>
+              <button
+                class="reaction"
+                @click="emit('react-answer', { answerId: answer.id, type: 'thanks' })"
+              >
+                参考になった {{ answer.reactions.thanks }}
+              </button>
+              <button
+                v-if="canDeleteAnswer(answer)"
+                class="action danger"
+                @click="emit('delete-answer', { answerId: answer.id })"
+              >
+                返信削除
+              </button>
+            </div>
+          </div>
+        </div>
+        <p v-else class="empty-answers">返信はまだありません。</p>
+        <div class="reply">
+          <input
+            v-model="replyText[question.id]"
+            type="text"
+            placeholder="回答・返信を入力"
+          />
+          <button class="reply-btn" type="button" @click="submitReply(question.id)">
+            返信
           </button>
         </div>
+        <label class="reply-anon">
+          <input v-model="replyAnonymous[question.id]" type="checkbox" />
+          匿名で返信する
+        </label>
       </div>
     </div>
     <p v-if="questions.length === 0" class="empty">まだ質問がありません。</p>
@@ -256,6 +271,34 @@ const submitReply = (questionId: string) => {
   line-height: 1.6;
   color: var(--ink);
   margin-bottom: 12px;
+}
+
+.author-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.tab {
+  border: 1px solid rgba(31, 41, 55, 0.15);
+  background: white;
+  color: var(--ink);
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.tab.active {
+  background: var(--ink);
+  color: white;
+  border-color: var(--ink);
 }
 
 .answers {
@@ -398,8 +441,9 @@ const submitReply = (questionId: string) => {
 
 .footer {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 12px;
   color: var(--ink-muted);
 }
@@ -452,6 +496,11 @@ const submitReply = (questionId: string) => {
   background: #ef4444;
 }
 
+.empty-answers {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: 4px 0 12px;
+}
 
 .empty {
   text-align: center;
