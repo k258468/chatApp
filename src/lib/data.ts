@@ -20,6 +20,26 @@ const requireSupabase = () => {
   return supabase;
 };
 
+const getSessionUser = async (supabase: ReturnType<typeof getSupabase>) => {
+  if (!supabase) {
+    return null;
+  }
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.user) {
+    return sessionData.session.user;
+  }
+  const { data: userData, error } = await supabase.auth.getUser();
+  if (error) {
+    return null;
+  }
+  return userData.user ?? null;
+};
+
+const getUserId = async (supabase: ReturnType<typeof getSupabase>) => {
+  const user = await getSessionUser(supabase);
+  return user?.id ?? null;
+};
+
 const levelForXp = (xp: number) => Math.floor(xp);
 const avatarForLevel = (level: number) => {
   if (level >= 12) return 3;
@@ -578,14 +598,14 @@ export const dataApi = {
     if (!supabase) {
       return localApi.getProfile();
     }
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
+    const userId = await getUserId(supabase);
+    if (!userId) {
       return { xp: 0, level: 0, avatarStage: 0 };
     }
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("xp, level")
-      .eq("id", authData.user.id)
+      .eq("id", userId)
       .maybeSingle();
     if (profileError || !profile) {
       return { xp: 0, level: 0, avatarStage: 0 };
@@ -602,14 +622,14 @@ export const dataApi = {
     if (!supabase) {
       return localApi.addXp(amount);
     }
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
+    const userId = await getUserId(supabase);
+    if (!userId) {
       return { xp: 0, level: 0, avatarStage: 0 };
     }
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("xp, level")
-      .eq("id", authData.user.id)
+      .eq("id", userId)
       .maybeSingle();
     if (profileError) {
       throw new Error(profileError.message);
@@ -620,7 +640,7 @@ export const dataApi = {
     const { error: updateError } = await supabase
       .from("profiles")
       .update({ xp: newXp, level: newLevel })
-      .eq("id", authData.user.id);
+      .eq("id", userId);
     if (updateError) {
       throw new Error(updateError.message);
     }
@@ -631,14 +651,14 @@ export const dataApi = {
       return localApi.updateAvatar(avatarUrl);
     }
     const supabase = requireSupabase();
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
+    const user = await getSessionUser(supabase);
+    if (!user) {
       throw new Error("ユーザーが見つかりません。");
     }
     const { data, error } = await supabase
       .from("profiles")
       .update({ avatar_url: avatarUrl })
-      .eq("id", authData.user.id)
+      .eq("id", user.id)
       .select("*")
       .single();
     if (error || !data) {
@@ -648,7 +668,7 @@ export const dataApi = {
       id: data.id,
       name: data.display_name,
       role: data.role,
-      email: authData.user.email ?? "",
+      email: user.email ?? "",
       avatarUrl: data.avatar_url ?? undefined,
     };
   },
@@ -657,14 +677,14 @@ export const dataApi = {
       return localApi.updateDisplayName(displayName);
     }
     const supabase = requireSupabase();
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
+    const user = await getSessionUser(supabase);
+    if (!user) {
       throw new Error("ユーザーが見つかりません。");
     }
     const { data, error } = await supabase
       .from("profiles")
       .update({ display_name: displayName })
-      .eq("id", authData.user.id)
+      .eq("id", user.id)
       .select("*")
       .single();
     if (error || !data) {
@@ -674,7 +694,7 @@ export const dataApi = {
       id: data.id,
       name: data.display_name,
       role: data.role,
-      email: authData.user.email ?? "",
+      email: user.email ?? "",
       avatarUrl: data.avatar_url ?? undefined,
     };
   },
