@@ -509,6 +509,7 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .reply-anon {
