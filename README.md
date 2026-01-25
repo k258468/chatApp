@@ -37,6 +37,9 @@ create table profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null,
   role text not null check (role in ('teacher', 'student')),
+  xp integer default 0,
+  level integer default 0,
+  avatar_url text,
   created_at timestamptz default now()
 );
 
@@ -108,6 +111,9 @@ alter table answer_reactions enable row level security;
 
 create policy "profiles read/write" on profiles
   for all using (auth.uid() = id) with check (auth.uid() = id);
+
+create policy "profiles public read" on profiles
+  for select using (true);
 
 create policy "rooms read" on rooms
   for select using (true);
@@ -183,6 +189,17 @@ create policy "answer_reactions delete" on answer_reactions
 ```
 
 5) `.env` にプロジェクトの URL と anon key を設定
+
+既存プロジェクトで `profiles` を作成済みの場合は以下を追加してください。
+
+```sql
+alter table profiles add column if not exists xp integer default 0;
+alter table profiles add column if not exists level integer default 0;
+alter table profiles add column if not exists avatar_url text;
+
+create policy "profiles public read" on profiles
+  for select using (true);
+```
 
 ## アカウント管理 (ローカル)
 - 初回ログイン画面で学生/教員を選択して登録します。

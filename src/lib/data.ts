@@ -20,6 +20,14 @@ const requireSupabase = () => {
   return supabase;
 };
 
+const levelForXp = (xp: number) => Math.floor(xp);
+const avatarForLevel = (level: number) => {
+  if (level >= 12) return 3;
+  if (level >= 7) return 2;
+  if (level >= 3) return 1;
+  return 0;
+};
+
 const mapRoom = (row: any): Room => ({
   id: row.id,
   code: row.code,
@@ -74,7 +82,7 @@ export const dataApi = {
     if (error || !data.user) {
       throw new Error(error?.message ?? "Failed to register");
     }
-    const profilePayload = { id: data.user.id, display_name: name, role };
+    const profilePayload = { id: data.user.id, display_name: name, role, xp: 0, level: 0 };
     const { error: profileError } = await supabase.from("profiles").upsert(profilePayload);
     if (profileError) {
       throw new Error(profileError.message);
@@ -555,10 +563,60 @@ export const dataApi = {
     return true;
   },
   async getProfile(): Promise<Profile> {
-    return localApi.getProfile();
+    if (useLocal) {
+      return localApi.getProfile();
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.getProfile();
+    }
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      return { xp: 0, level: 0, avatarStage: 0 };
+    }
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("xp, level")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+    if (profileError || !profile) {
+      return { xp: 0, level: 0, avatarStage: 0 };
+    }
+    const xp = profile.xp ?? 0;
+    const level = profile.level ?? levelForXp(xp);
+    return { xp, level, avatarStage: avatarForLevel(level) };
   },
   async addXp(amount: number): Promise<Profile> {
-    return localApi.addXp(amount);
+    if (useLocal) {
+      return localApi.addXp(amount);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.addXp(amount);
+    }
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      return { xp: 0, level: 0, avatarStage: 0 };
+    }
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("xp, level")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+    if (profileError) {
+      throw new Error(profileError.message);
+    }
+    const currentXp = profile?.xp ?? 0;
+    const newXp = Math.max(0, currentXp + amount);
+    const newLevel = levelForXp(newXp);
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ xp: newXp, level: newLevel })
+      .eq("id", authData.user.id);
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+    return { xp: newXp, level: newLevel, avatarStage: avatarForLevel(newLevel) };
   },
   async updateAvatar(avatarUrl: string): Promise<UserAccount> {
     if (useLocal) {
