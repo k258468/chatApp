@@ -20,6 +20,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const pendingJoinCode = ref<string | null>(null);
 const userAvatars = ref<Record<string, string>>({});
+const userLevels = ref<Record<string, number>>({});
 const avatarInput = ref<HTMLInputElement | null>(null);
 const profileOpen = ref(false);
 const displayNameDraft = ref("");
@@ -227,7 +228,13 @@ const refreshQuestions = async (options?: { silent?: boolean }) => {
         }
       }
     }
-    userAvatars.value = await dataApi.listUserAvatars(Array.from(ownerIds));
+    const ownerIdList = Array.from(ownerIds);
+    const [avatars, levels] = await Promise.all([
+      dataApi.listUserAvatars(ownerIdList),
+      dataApi.listUserLevels(ownerIdList),
+    ]);
+    userAvatars.value = avatars;
+    userLevels.value = levels;
   } catch (err) {
     setError((err as Error).message);
   } finally {
@@ -560,6 +567,7 @@ onUnmounted(() => {
           :loading="loading"
           :current-user-id="currentUser?.id"
           :user-avatars="userAvatars"
+          :user-levels="userLevels"
           :default-avatar-url="defaultAvatarUrl"
           :current-user-level="profile.level"
           @refresh="refreshQuestions"

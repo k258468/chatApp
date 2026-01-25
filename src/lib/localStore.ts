@@ -191,6 +191,17 @@ export const localApi = {
     }
     return result;
   },
+  async listUserLevels(userIds: string[]): Promise<Record<string, number>> {
+    const store = loadStore();
+    const result: Record<string, number> = {};
+    for (const userId of userIds) {
+      const profile = store.profiles[userId];
+      if (profile) {
+        result[userId] = profile.level ?? 0;
+      }
+    }
+    return result;
+  },
   async listJoinedRooms(): Promise<Room[]> {
     const store = loadStore();
     if (!store.currentUserId) {

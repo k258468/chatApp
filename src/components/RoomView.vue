@@ -11,6 +11,7 @@ const props = defineProps<{
   loading: boolean;
   currentUserId?: string;
   userAvatars: Record<string, string>;
+  userLevels: Record<string, number>;
   currentUserLevel: number;
   defaultAvatarUrl: string;
 }>();
@@ -152,6 +153,7 @@ const applyTemplate = (value: string) => {
         :questions="questions"
         :current-user-id="currentUserId"
         :user-avatars="userAvatars"
+        :user-levels="userLevels"
         :default-avatar-url="defaultAvatarUrl"
         :current-user-level="currentUserLevel"
         @resolve="emit('resolve', $event)"

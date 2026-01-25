@@ -7,6 +7,7 @@ const props = defineProps<{
   questions: Question[];
   currentUserId?: string;
   userAvatars?: Record<string, string>;
+  userLevels?: Record<string, number>;
   currentUserLevel?: number;
   defaultAvatarUrl: string;
 }>();
@@ -43,10 +44,13 @@ const avatarForQuestion = (question: Question) =>
 const avatarForAnswer = (answer: Question["answers"][number]) =>
   answer.ownerId ? props.userAvatars?.[answer.ownerId] ?? props.defaultAvatarUrl : undefined;
 const frameClassForOwner = (ownerId?: string) => {
-  if (!ownerId || ownerId !== props.currentUserId) {
+  if (!ownerId) {
     return "";
   }
-  const level = props.currentUserLevel ?? 0;
+  const level =
+    ownerId === props.currentUserId
+      ? props.currentUserLevel ?? props.userLevels?.[ownerId] ?? 0
+      : props.userLevels?.[ownerId] ?? 0;
   if (level >= 3) return "frame-3";
   if (level >= 2) return "frame-2";
   if (level >= 1) return "frame-1";

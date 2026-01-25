@@ -724,4 +724,29 @@ export const dataApi = {
     }
     return result;
   },
+  async listUserLevels(userIds: string[]): Promise<Record<string, number>> {
+    if (!userIds.length) {
+      return {};
+    }
+    if (useLocal) {
+      return localApi.listUserLevels(userIds);
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return localApi.listUserLevels(userIds);
+    }
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, xp, level")
+      .in("id", userIds);
+    if (error || !data) {
+      throw new Error(error?.message ?? "レベル情報の取得に失敗しました。");
+    }
+    const result: Record<string, number> = {};
+    for (const row of data) {
+      const level = row.level ?? levelForXp(row.xp ?? 0);
+      result[row.id] = level;
+    }
+    return result;
+  },
 };
