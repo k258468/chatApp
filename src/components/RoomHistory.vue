@@ -15,7 +15,7 @@ const emit = defineEmits<{
     <div class="card-header">
       <p class="eyebrow">History</p>
       <h2>参加済みルーム</h2>
-      <p class="sub">過去に参加したルームから質問を確認できます。</p>
+      <p class="sub"></p>
     </div>
     <div v-if="props.rooms.length" class="room-list">
       <button

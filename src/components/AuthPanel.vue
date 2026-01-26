@@ -80,7 +80,7 @@ const submit = () => {
     <div class="card-header">
       <p class="eyebrow">Account</p>
       <h2>アカウント管理</h2>
-      <p class="sub">学生と教員でアカウントを分けて表示を切り替えます。</p>
+      <p class="sub"></p>
     </div>
     <div class="mode-toggle">
       <button :class="{ active: mode === 'login' }" @click="mode = 'login'">ログイン</button>

@@ -34,18 +34,15 @@ const editQuestionText = ref<Record<string, string>>({});
 const editAnswerText = ref<Record<string, string>>({});
 const roleLabel = (role: Role) => {
   if (role === "teacher") return "教員";
-  if (role === "ta") return "TA";
   return "学生";
 };
 const canDeleteQuestion = (question: Question) =>
   (props.role === "student" && question.ownerId === props.currentUserId) ||
-  props.role === "teacher" ||
-  props.role === "ta";
+  props.role === "teacher";
 const canEditQuestion = (question: Question) => canDeleteQuestion(question);
 const canDeleteAnswer = (answer: Question["answers"][number]) =>
   (props.role === "student" && answer.ownerId === props.currentUserId) ||
-  props.role === "teacher" ||
-  props.role === "ta";
+  props.role === "teacher";
 const canEditAnswer = (answer: Question["answers"][number]) => canDeleteAnswer(answer);
 const avatarForQuestion = (question: Question) =>
   question.ownerId ? props.userAvatars?.[question.ownerId] ?? props.defaultAvatarUrl : undefined;
@@ -210,14 +207,14 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
           質問削除
         </button>
         <button
-          v-if="(role === 'teacher' || role === 'ta') && question.status === 'open'"
+          v-if="role === 'teacher' && question.status === 'open'"
           class="action"
           @click="emit('resolve', { questionId: question.id })"
         >
           回答済み
         </button>
         <button
-          v-if="(role === 'teacher' || role === 'ta') && question.status === 'resolved'"
+          v-if="role === 'teacher' && question.status === 'resolved'"
           class="action ghost"
           @click="emit('reopen', { questionId: question.id })"
         >

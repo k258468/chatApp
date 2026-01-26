@@ -169,14 +169,10 @@ const handleProfileSave = async () => {
   }
 };
 
-const handleCreateRoom = async (payload: {
-  name: string;
-  channel: string;
-  taKey?: string;
-}) => {
+const handleCreateRoom = async (payload: { name: string; channel: string }) => {
   loading.value = true;
   try {
-    room.value = await dataApi.createRoom(payload.name, payload.channel, payload.taKey);
+    room.value = await dataApi.createRoom(payload.name, payload.channel);
     joinedRooms.value = await dataApi.listJoinedRooms();
     await refreshQuestions();
   } catch (err) {
@@ -186,16 +182,12 @@ const handleCreateRoom = async (payload: {
   }
 };
 
-const handleJoinRoom = async (payload: { code: string; taKey?: string }) => {
+const handleJoinRoom = async (payload: { code: string }) => {
   loading.value = true;
   try {
     const joined = await dataApi.joinRoom(payload.code);
     if (!joined) {
       setError("ルームが見つかりませんでした。");
-      return;
-    }
-    if (role.value === "ta" && joined.taKey && joined.taKey !== payload.taKey) {
-      setError("TA表示キーが一致しません。");
       return;
     }
     room.value = joined;
@@ -521,9 +513,9 @@ onUnmounted(() => {
     <header class="hero">
       <div>
         <p class="eyebrow">Lecture Interaction</p>
-        <h1>Lecture Q&A Pulse</h1>
+        <h1>Lecture Q&A Board</h1>
         <p class="lead">
-          講義中の質問を集約し、理解度の“見える化”で双方向性を高める。
+          
         </p>
       </div>
     </header>
@@ -581,7 +573,7 @@ onUnmounted(() => {
           @open="handleOpenRoom"
         />
         <RoomCreate v-if="currentUser && role === 'teacher' && !room" @create="handleCreateRoom" />
-        <RoomJoin v-if="currentUser && !room" :role="role" @join="handleJoinRoom" />
+        <RoomJoin v-if="currentUser && !room" @join="handleJoinRoom" />
         <RoomView
           v-if="currentUser && room"
           :room="room"

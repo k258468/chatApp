@@ -42,7 +42,6 @@ const resolvedCount = computed(
 );
 const roleLabel = computed(() => {
   if (props.role === "teacher") return "教員";
-  if (props.role === "ta") return "TA";
   return "学生";
 });
 
@@ -84,7 +83,7 @@ const applyTemplate = (value: string) => {
       <div>
         <p class="eyebrow">Live Room</p>
         <h2>{{ room.name }}</h2>
-        <p class="sub">講義単位で質問を集約しています。</p>
+        <p class="sub"></p>
         <p v-if="room.channel" class="sub">メモ: {{ room.channel }}</p>
       </div>
       <button class="ghost" @click="emit('exit')">退出</button>
@@ -148,7 +147,7 @@ const applyTemplate = (value: string) => {
     <div class="panel list-panel">
       <div class="panel-header">
         <h3>質問一覧</h3>
-        <p class="sub">量と内容から詰まりを検知します。</p>
+        <p class="sub"></p>
       </div>
       <QuestionList
         :role="role"

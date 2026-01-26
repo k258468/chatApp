@@ -1,4 +1,4 @@
-export type Role = "teacher" | "student" | "ta";
+export type Role = "teacher" | "student";
 
 export type QuestionStatus = "open" | "resolved";
 
@@ -7,7 +7,6 @@ export interface Room {
   code: string;
   name: string;
   channel?: string;
-  taKey?: string;
   createdAt: string;
 }
 

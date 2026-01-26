@@ -1,19 +1,11 @@
 <script setup lang="ts">
 import { ref } from "vue";
 
-import type { Role } from "../types";
-
-const props = defineProps<{
-  role: Role;
-}>();
-
 const emit = defineEmits<{
-  (e: "join", payload: { code: string; taKey?: string }): void;
+  (e: "join", payload: { code: string }): void;
 }>();
 
 const code = ref("");
-const taKey = ref("");
-
 const parseCode = (input: string) => {
   try {
     const url = new URL(input);
@@ -29,7 +21,7 @@ const submit = () => {
   if (!value) {
     return;
   }
-  emit("join", { code: value, taKey: taKey.value.trim() || undefined });
+  emit("join", { code: value });
 };
 </script>
 
@@ -38,20 +30,16 @@ const submit = () => {
     <div class="card-header">
       <p class="eyebrow">Student Entry</p>
       <h2>ルームに参加</h2>
-      <p class="sub">QRコードかURLからも参加できます。</p>
+      <p class="sub"></p>
     </div>
     <form class="form" @submit.prevent="submit">
       <label>
-        <span>ルームコード / 参加URL</span>
-        <input v-model="code" type="text" placeholder="例: X7K9Q2 または https://..." />
-      </label>
-      <label v-if="props.role === 'ta'">
-        <span>TA表示キー</span>
-        <input v-model="taKey" type="text" placeholder="教員から共有されたキー" />
+        <span>ルームコード</span>
+        <input v-model="code" type="text" placeholder="例: X7K9Q2" />
       </label>
       <button class="primary" type="submit">参加する</button>
       <p class="hint">
-        {{ props.role === "ta" ? "TAキーが必要です。" : "教員が表示しているコードを入力してください。" }}
+        教員が表示しているコードを入力してください。
       </p>
     </form>
   </section>

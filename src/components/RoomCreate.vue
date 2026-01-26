@@ -2,13 +2,11 @@
 import { ref } from "vue";
 
 const emit = defineEmits<{
-  (e: "create", payload: { name: string; channel: string; taKey?: string }): void;
+  (e: "create", payload: { name: string; channel: string }): void;
 }>();
 
 const name = ref("");
 const channel = ref("");
-const taKey = ref("");
-
 const submit = () => {
   if (!name.value.trim()) {
     return;
@@ -16,7 +14,6 @@ const submit = () => {
   emit("create", {
     name: name.value.trim(),
     channel: channel.value.trim(),
-    taKey: taKey.value.trim() || undefined,
   });
 };
 </script>
@@ -26,7 +23,7 @@ const submit = () => {
     <div class="card-header">
       <p class="eyebrow">Teacher Console</p>
       <h2>ルームを作成</h2>
-      <p class="sub">講義単位のルームで質問を集約します。</p>
+      <p class="sub"></p>
     </div>
     <form class="form" @submit.prevent="submit">
       <label>
@@ -37,12 +34,8 @@ const submit = () => {
         <span>メモ (任意)</span>
         <input v-model="channel" type="text" placeholder="例: 水2 / 大教室" />
       </label>
-      <label>
-        <span>TA表示キー (任意)</span>
-        <input v-model="taKey" type="text" placeholder="例: TA-2024" />
-      </label>
       <button class="primary" type="submit">ルームを生成</button>
-      <p class="hint">教員アカウント専用の操作として想定。</p>
+      <p class="hint"></p>
     </form>
   </section>
 </template>

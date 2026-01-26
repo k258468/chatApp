@@ -53,7 +53,6 @@ const mapRoom = (row: any): Room => ({
   code: row.code,
   name: row.name,
   channel: row.channel,
-  taKey: row.ta_key ?? row.taKey ?? undefined,
   createdAt: row.created_at,
 });
 
@@ -206,20 +205,16 @@ export const dataApi = {
       .filter(Boolean)
       .map(mapRoom);
   },
-  async createRoom(name: string, channel: string, taKey?: string): Promise<Room> {
+  async createRoom(name: string, channel: string): Promise<Room> {
     if (useLocal) {
-      return localApi.createRoom(name, channel, taKey);
+      return localApi.createRoom(name, channel);
     }
     const supabase = requireSupabase();
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
       throw new Error("認証が必要です。");
     }
-    const payload: Record<string, unknown> = { name, channel };
-    if (taKey) {
-      payload.ta_key = taKey;
-    }
-    payload.created_by = authData.user.id;
+    const payload: Record<string, unknown> = { name, channel, created_by: authData.user.id };
     const { data, error } = await supabase
       .from("rooms")
       .insert([payload])

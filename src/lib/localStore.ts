@@ -214,14 +214,13 @@ export const localApi = {
     );
     return store.rooms.filter((room) => roomIds.has(room.id));
   },
-  async createRoom(name: string, channel: string, taKey?: string): Promise<Room> {
+  async createRoom(name: string, channel: string): Promise<Room> {
     const store = loadStore();
     const room: Room = {
       id: makeId(),
       code: Math.random().toString(36).slice(2, 8).toUpperCase(),
       name,
       channel,
-      taKey,
       createdAt: new Date().toISOString(),
     };
     store.rooms.unshift(room);
