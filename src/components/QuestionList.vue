@@ -10,6 +10,10 @@ const props = defineProps<{
   userLevels?: Record<string, number>;
   currentUserLevel?: number;
   defaultAvatarUrl: string;
+  userReactions?: {
+    questions: Record<string, { like: boolean; thanks: boolean }>;
+    answers: Record<string, { like: boolean; thanks: boolean }>;
+  };
 }>();
 
 const emit = defineEmits<{
@@ -61,6 +65,12 @@ const frameClassForOwner = (ownerId?: string) => {
   if (level >= 1) return "frame-1";
   return "";
 };
+
+const isQuestionReacted = (questionId: string, type: "like" | "thanks") =>
+  props.userReactions?.questions[questionId]?.[type] ?? false;
+
+const isAnswerReacted = (answerId: string, type: "like" | "thanks") =>
+  props.userReactions?.answers[answerId]?.[type] ?? false;
 
 const submitReply = (questionId: string) => {
   const text = replyText.value[questionId]?.trim();
@@ -142,16 +152,6 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
           <span v-else-if="question.author" class="author">{{ question.author }}</span>
           <span v-else class="author">名無し</span>
         </div>
-        <div class="tabs">
-          <button
-            class="tab"
-            :class="{ active: isAnswersOpen(question.id) }"
-            type="button"
-            @click="toggleAnswers(question.id)"
-          >
-            返信 {{ question.answers.length }}
-          </button>
-        </div>
       </div>
       <div v-if="editingQuestionId === question.id" class="edit-block">
         <textarea v-model="editQuestionText[question.id]" rows="3" />
@@ -164,141 +164,168 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
       </div>
       <p v-else class="text">{{ question.text }}</p>
       <div class="footer">
-        <button
-          class="reaction"
-          @click="emit('react', { questionId: question.id, type: 'like' })"
-        >
-          いいね {{ question.reactions.like }}
-        </button>
-        <button
-          class="reaction"
-          @click="emit('react', { questionId: question.id, type: 'thanks' })"
-        >
-          参考になった {{ question.reactions.thanks }}
-        </button>
-        <template v-if="role === 'student' && question.ownerId === props.currentUserId">
-          <button
-            v-if="question.status === 'open'"
-            class="action ghost"
-            @click="emit('resolve', { questionId: question.id })"
+        <div class="footer-row">
+          <div class="reactions-group">
+            <button
+              class="reaction"
+              :class="{ active: isQuestionReacted(question.id, 'like') }"
+              @click="emit('react', { questionId: question.id, type: 'like' })"
+            >
+              いいね {{ question.reactions.like }}
+            </button>
+            <button
+              class="reaction"
+              :class="{ active: isQuestionReacted(question.id, 'thanks') }"
+              @click="emit('react', { questionId: question.id, type: 'thanks' })"
+            >
+              参考になった {{ question.reactions.thanks }}
+            </button>
+          </div>
+          <div
+            v-if="canEditQuestion(question) || (role === 'student' && question.ownerId === props.currentUserId) || role === 'teacher'"
+            class="owner-actions-group"
           >
-            納得
-          </button>
-          <button
-            v-else
-            class="action ghost"
-            @click="emit('reopen', { questionId: question.id })"
-          >
-            納得を取り消す
-          </button>
-        </template>
-        <button
-          v-if="canEditQuestion(question)"
-          class="action ghost"
-          @click="startEditQuestion(question)"
-        >
-          編集
-        </button>
-        <button
-          v-if="canDeleteQuestion(question)"
-          class="action danger"
-          @click="emit('delete-question', { questionId: question.id })"
-        >
-          質問削除
-        </button>
-        <button
-          v-if="role === 'teacher' && question.status === 'open'"
-          class="action"
-          @click="emit('resolve', { questionId: question.id })"
-        >
-          回答済み
-        </button>
-        <button
-          v-if="role === 'teacher' && question.status === 'resolved'"
-          class="action ghost"
-          @click="emit('reopen', { questionId: question.id })"
-        >
-          再オープン
-        </button>
-      </div>
-      <div v-if="isAnswersOpen(question.id)">
-        <div v-if="question.answers.length" class="answers">
-          <div v-for="answer in question.answers" :key="answer.id" class="answer">
-            <div class="answer-meta">
-              <div
-                v-if="answer.author !== '匿名' && avatarForAnswer(answer)"
-                class="avatar-frame"
-                :class="frameClassForOwner(answer.ownerId)"
-              >
-                <div class="avatar-inner">
-                  <img
-                    class="answer-avatar"
-                    :src="avatarForAnswer(answer)"
-                    alt="返信者アイコン"
-                  />
-                </div>
-              </div>
-              <span class="answer-author">{{ answer.author || "匿名" }}</span>
-              <span class="answer-role">{{ roleLabel(answer.role) }}</span>
-              <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
-            </div>
-            <div v-if="editingAnswerId === answer.id" class="edit-block">
-              <textarea v-model="editAnswerText[answer.id]" rows="3" />
-              <div class="edit-actions">
-                <button class="action" type="button" @click="saveEditAnswer(answer)">
-                  保存
-                </button>
-                <button class="action ghost" type="button" @click="cancelEditAnswer">
-                  キャンセル
-                </button>
-              </div>
-            </div>
-            <p v-else class="answer-text">{{ answer.text }}</p>
-            <div class="answer-actions">
+            <template v-if="role === 'student' && question.ownerId === props.currentUserId">
               <button
-                class="reaction"
-                @click="emit('react-answer', { answerId: answer.id, type: 'like' })"
-              >
-                いいね {{ answer.reactions.like }}
-              </button>
-              <button
-                class="reaction"
-                @click="emit('react-answer', { answerId: answer.id, type: 'thanks' })"
-              >
-                参考になった {{ answer.reactions.thanks }}
-              </button>
-              <button
-                v-if="canEditAnswer(answer)"
+                v-if="question.status === 'open'"
                 class="action ghost"
-                @click="startEditAnswer(answer)"
+                @click="emit('resolve', { questionId: question.id })"
               >
-                編集
+                納得
               </button>
               <button
-                v-if="canDeleteAnswer(answer)"
-                class="action danger"
-                @click="emit('delete-answer', { answerId: answer.id })"
+                v-else
+                class="action ghost"
+                @click="emit('reopen', { questionId: question.id })"
               >
-                返信削除
+                納得を取り消す
               </button>
-            </div>
+            </template>
+            <button
+              v-if="canEditQuestion(question)"
+              class="action ghost"
+              @click="startEditQuestion(question)"
+            >
+              編集
+            </button>
+            <button
+              v-if="canDeleteQuestion(question)"
+              class="action danger"
+              @click="emit('delete-question', { questionId: question.id })"
+            >
+              質問削除
+            </button>
+            <button
+              v-if="role === 'teacher' && question.status === 'open'"
+              class="action"
+              @click="emit('resolve', { questionId: question.id })"
+            >
+              回答済み
+            </button>
+            <button
+              v-if="role === 'teacher' && question.status === 'resolved'"
+              class="action ghost"
+              @click="emit('reopen', { questionId: question.id })"
+            >
+              再オープン
+            </button>
           </div>
         </div>
-        <p v-else class="empty-answers">返信はまだありません。</p>
-        <div class="reply">
-          <input
-            v-model="replyText[question.id]"
-            type="text"
-            placeholder="回答・返信を入力"
-          />
-          <button class="reply-btn" type="button" @click="submitReply(question.id)">
-            返信
-          </button>
+        <button
+          class="reply-toggle"
+          :class="{ active: isAnswersOpen(question.id) }"
+          type="button"
+          @click="toggleAnswers(question.id)"
+        >
+          <span class="toggle-icon" :class="{ open: isAnswersOpen(question.id) }">▼</span>
+          返信 {{ question.answers.length }}
+        </button>
+      </div>
+      <div class="answers-wrapper" :class="{ open: isAnswersOpen(question.id) }">
+        <div class="answers-content">
+          <div v-if="question.answers.length" class="answers">
+            <div v-for="answer in question.answers" :key="answer.id" class="answer">
+              <div class="answer-meta">
+                <div
+                  v-if="answer.author !== '匿名' && avatarForAnswer(answer)"
+                  class="avatar-frame"
+                  :class="frameClassForOwner(answer.ownerId)"
+                >
+                  <div class="avatar-inner">
+                    <img
+                      class="answer-avatar"
+                      :src="avatarForAnswer(answer)"
+                      alt="返信者アイコン"
+                    />
+                  </div>
+                </div>
+                <span class="answer-author">{{ answer.author || "匿名" }}</span>
+                <span class="answer-role">{{ roleLabel(answer.role) }}</span>
+                <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
+              </div>
+              <div v-if="editingAnswerId === answer.id" class="edit-block">
+                <textarea v-model="editAnswerText[answer.id]" rows="3" />
+                <div class="edit-actions">
+                  <button class="action" type="button" @click="saveEditAnswer(answer)">
+                    保存
+                  </button>
+                  <button class="action ghost" type="button" @click="cancelEditAnswer">
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+              <p v-else class="answer-text">{{ answer.text }}</p>
+              <div class="answer-actions">
+                <div class="reactions-group">
+                  <button
+                    class="reaction"
+                    :class="{ active: isAnswerReacted(answer.id, 'like') }"
+                    @click="emit('react-answer', { answerId: answer.id, type: 'like' })"
+                  >
+                    いいね {{ answer.reactions.like }}
+                  </button>
+                  <button
+                    class="reaction"
+                    :class="{ active: isAnswerReacted(answer.id, 'thanks') }"
+                    @click="emit('react-answer', { answerId: answer.id, type: 'thanks' })"
+                  >
+                    参考になった {{ answer.reactions.thanks }}
+                  </button>
+                </div>
+                <div v-if="canEditAnswer(answer)" class="owner-actions-group">
+                  <button
+                    class="action ghost"
+                    @click="startEditAnswer(answer)"
+                  >
+                    編集
+                  </button>
+                  <button
+                    v-if="canDeleteAnswer(answer)"
+                    class="action danger"
+                    @click="emit('delete-answer', { answerId: answer.id })"
+                  >
+                    返信削除
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p v-else class="empty-answers">返信はまだありません。</p>
+          <div class="reply">
+            <input
+              v-model="replyText[question.id]"
+              type="text"
+              placeholder="回答・返信を入力"
+            />
+            <button class="reply-btn" type="button" :disabled="!replyText[question.id]?.trim()" @click="submitReply(question.id)">
+              返信
+            </button>
+          </div>
+          <label class="reply-anon">
+            <input v-model="replyAnonymous[question.id]" type="checkbox" />
+            匿名で返信する
+          </label>
         </div>
-        <label class="reply-anon">
-          <input v-model="replyAnonymous[question.id]" type="checkbox" />
-          匿名で返信する
-        </label>
       </div>
     </div>
     <p v-if="questions.length === 0" class="empty">まだ質問がありません。</p>
@@ -355,30 +382,64 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
 
 .author-block {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
   margin-bottom: 10px;
 }
 
-.tabs {
-  display: inline-flex;
-  gap: 8px;
-}
-
-.tab {
+.reply-toggle {
   border: 1px solid rgba(31, 41, 55, 0.15);
-  background: white;
+  background: rgba(31, 41, 55, 0.03);
   color: var(--ink);
-  padding: 4px 12px;
-  border-radius: 999px;
+  padding: 8px 14px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  width: 100%;
 }
 
-.tab.active {
-  background: var(--ink);
+.reply-toggle:hover {
+  background: rgba(31, 41, 55, 0.08);
+  border-color: rgba(31, 41, 55, 0.25);
+}
+
+.reply-toggle.active {
+  background: var(--accent);
   color: white;
-  border-color: var(--ink);
+  border-color: var(--accent);
+}
+
+.reply-toggle.active:hover {
+  background: var(--accent-strong);
+}
+
+.toggle-icon {
+  font-size: 8px;
+  transition: transform 0.3s ease;
+  display: inline-block;
+}
+
+.toggle-icon.open {
+  transform: rotate(180deg);
+}
+
+.answers-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+  margin-top: 12px;
+}
+
+.answers-wrapper.open {
+  grid-template-rows: 1fr;
+}
+
+.answers-content {
+  overflow: hidden;
 }
 
 .answers {
@@ -481,9 +542,10 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
 
 .answer-actions {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   margin-top: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .reply {
@@ -536,13 +598,39 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
   cursor: pointer;
 }
 
+.reply-btn:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
 .footer {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
   font-size: 12px;
   color: var(--ink-muted);
+}
+
+.footer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reactions-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.owner-actions-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-left: 12px;
+  border-left: 1px solid rgba(31, 41, 55, 0.12);
 }
 
 .author-info {
@@ -572,6 +660,23 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
   padding: 6px 10px;
   border-radius: 999px;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reaction:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.reaction.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  animation: bounce 0.3s ease;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
 }
 
 .action {
@@ -581,6 +686,12 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
   padding: 6px 12px;
   border-radius: 999px;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action:hover {
+  background: #374151;
+  transform: translateY(-1px);
 }
 
 .action.ghost {
@@ -589,8 +700,18 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
   border: 1px solid rgba(31, 41, 55, 0.2);
 }
 
+.action.ghost:hover {
+  background: rgba(31, 41, 55, 0.08);
+  border-color: rgba(31, 41, 55, 0.3);
+}
+
 .action.danger {
   background: #ef4444;
+}
+
+.action.danger:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
 }
 
 .empty-answers {
