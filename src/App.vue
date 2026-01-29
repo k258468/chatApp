@@ -32,6 +32,8 @@ const userReactions = ref<{
 }>({ questions: {}, answers: {} });
 const avatarInput = ref<HTMLInputElement | null>(null);
 const profileOpen = ref(false);
+const avatarError = ref<string | null>(null);
+const profileSaveMessage = ref<string | null>(null);
 const displayNameDraft = ref("");
 const confirmModal = ref<{
   open: boolean;
@@ -146,6 +148,7 @@ const handleLogout = async () => {
 };
 
 const handleAvatarPick = () => {
+  avatarError.value = null;
   avatarInput.value?.click();
 };
 
@@ -153,22 +156,23 @@ const handleAvatarChange = (event: Event) => {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   input.value = "";
+  avatarError.value = null;
   if (!file) {
     return;
   }
   if (!file.type.startsWith("image/")) {
-    setError("画像ファイルを選択してください。");
+    avatarError.value = "画像ファイルを選択してください。";
     return;
   }
   if (file.size > 2 * 1024 * 1024) {
-    setError("2MB以下の画像を選択してください。");
+    avatarError.value = "2MB以下の画像を選択してください。";
     return;
   }
   const reader = new FileReader();
   reader.onload = async () => {
     const result = reader.result;
     if (typeof result !== "string") {
-      setError("画像の読み込みに失敗しました。");
+      avatarError.value = "画像の読み込みに失敗しました。";
       return;
     }
     try {
@@ -178,6 +182,7 @@ const handleAvatarChange = (event: Event) => {
       if (updated.avatarUrl) {
         userAvatars.value = { ...userAvatars.value, [updated.id]: updated.avatarUrl };
       }
+      avatarError.value = null;
     } catch (err) {
       setError((err as Error).message);
     }
@@ -190,6 +195,10 @@ const toggleProfile = () => {
   if (currentUser.value) {
     displayNameDraft.value = currentUser.value.name;
   }
+  if (!profileOpen.value) {
+    avatarError.value = null;
+    profileSaveMessage.value = null;
+  }
 };
 
 const handleProfileSave = async () => {
@@ -197,10 +206,17 @@ const handleProfileSave = async () => {
   if (!trimmed || !currentUser.value) {
     return;
   }
+  profileSaveMessage.value = null;
   try {
     const updated = await dataApi.updateDisplayName(trimmed);
     currentUser.value = updated;
     displayNameDraft.value = updated.name;
+    profileSaveMessage.value = "保存しました。";
+    setTimeout(() => {
+      if (profileSaveMessage.value === "保存しました。") {
+        profileSaveMessage.value = null;
+      }
+    }, 2000);
   } catch (err) {
     setError((err as Error).message);
   }
@@ -630,15 +646,26 @@ onUnmounted(() => {
           <div class="profile-header">
             <h3>プロフィール</h3>
           </div>
+          <div class="profile-avatar-picker">
+            <span class="profile-label">アイコン</span>
+            <div class="profile-avatar-row">
+              <img class="profile-avatar-preview" :src="avatarUrlForCurrent" alt="アイコンプレビュー" />
+              <div class="profile-avatar-actions">
+                <button class="ghost" type="button" @click="handleAvatarPick">画像を選ぶ</button>
+                <p class="hint">2MB以下の画像を選択してください</p>
+              </div>
+            </div>
+            <p v-if="avatarError" class="field-error">{{ avatarError }}</p>
+          </div>
           <label class="profile-field">
             <span>ニックネーム</span>
             <input v-model="displayNameDraft" type="text" />
           </label>
           <div class="profile-actions">
-            <button class="ghost" @click="handleAvatarPick">アイコンを設定</button>
             <button class="primary" @click="handleProfileSave">保存</button>
             <button class="ghost-danger" @click="handleLogout">ログアウト</button>
           </div>
+          <p v-if="profileSaveMessage" class="profile-save-message">{{ profileSaveMessage }}</p>
         </div>
         <RoomHistory
           v-if="currentUser && !room"
@@ -879,6 +906,54 @@ a {
   border-radius: 12px;
   border: 1px solid rgba(31, 41, 55, 0.12);
   font-size: 14px;
+}
+
+.profile-avatar-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.profile-label {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.profile-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-avatar-preview {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  background: white;
+}
+
+.profile-avatar-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.field-error {
+  margin: 0;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.profile-save-message {
+  margin: 0;
+  font-size: 12px;
+  color: #059669;
 }
 
 .profile-actions {

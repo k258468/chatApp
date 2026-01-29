@@ -27,6 +27,7 @@ const passwordConfirm = ref("");
 const role = ref<Role>("student");
 const avatarInput = ref<HTMLInputElement | null>(null);
 const avatarUrl = ref<string | undefined>(undefined);
+const avatarError = ref("");
 const touched = ref<Record<string, boolean>>({});
 
 const markTouched = (field: string) => {
@@ -80,6 +81,7 @@ const isFormValid = computed(() => {
 });
 
 const pickAvatar = () => {
+  avatarError.value = "";
   avatarInput.value?.click();
 };
 
@@ -91,11 +93,14 @@ const handleAvatarChange = (event: Event) => {
     return;
   }
   if (!file.type.startsWith("image/")) {
+    avatarError.value = "画像ファイルを選択してください。";
     return;
   }
   if (file.size > 2 * 1024 * 1024) {
+    avatarError.value = "2MB以下の画像を選択してください。";
     return;
   }
+  avatarError.value = "";
   const reader = new FileReader();
   reader.onload = () => {
     if (typeof reader.result === "string") {
@@ -166,6 +171,7 @@ const submit = () => {
             <p class="hint">未設定の場合はデフォルトアイコンになります</p>
           </div>
         </div>
+        <p v-if="avatarError" class="field-error">{{ avatarError }}</p>
       </div>
       <div class="field">
         <label>
