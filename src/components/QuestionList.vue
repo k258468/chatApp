@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { Question, Reactions, Role } from "../types";
 
 const props = defineProps<{
@@ -30,12 +30,15 @@ const emit = defineEmits<{
 
 const statusLabel = (status: string) => (status === "resolved" ? "回答済み" : "受付中");
 const replyText = ref<Record<string, string>>({});
-const replyAnonymous = ref<Record<string, boolean>>({});
+const replyAnonymous = ref(false);
 const activeTab = ref<Record<string, "question" | "answers">>({});
 const editingQuestionId = ref<string | null>(null);
 const editingAnswerId = ref<string | null>(null);
 const editQuestionText = ref<Record<string, string>>({});
 const editAnswerText = ref<Record<string, string>>({});
+const replyAnonymousStorageKey = computed(
+  () => `lecture-qna-reply-anonymous:${props.currentUserId ?? "guest"}`
+);
 const roleLabel = (role: Role) => {
   if (role === "teacher") return "教員";
   return "学生";
@@ -77,10 +80,32 @@ const submitReply = (questionId: string) => {
   if (!text) {
     return;
   }
-  emit("reply", { questionId, text, anonymous: replyAnonymous.value[questionId] });
+  emit("reply", { questionId, text, anonymous: replyAnonymous.value });
   replyText.value[questionId] = "";
-  replyAnonymous.value[questionId] = false;
 };
+
+const loadReplyAnonymousPreference = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const stored = window.localStorage.getItem(replyAnonymousStorageKey.value);
+  if (stored === "true") {
+    replyAnonymous.value = true;
+  } else if (stored === "false") {
+    replyAnonymous.value = false;
+  }
+};
+
+watch(replyAnonymousStorageKey, () => {
+  loadReplyAnonymousPreference();
+}, { immediate: true });
+
+watch(replyAnonymous, (value) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(replyAnonymousStorageKey.value, String(value));
+});
 
 const isAnswersOpen = (questionId: string) => activeTab.value[questionId] === "answers";
 const toggleAnswers = (questionId: string) => {
@@ -322,7 +347,7 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
             </button>
           </div>
           <label class="reply-anon">
-            <input v-model="replyAnonymous[question.id]" type="checkbox" />
+            <input v-model="replyAnonymous" type="checkbox" />
             匿名で返信する
           </label>
         </div>

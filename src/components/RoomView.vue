@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { Profile, Question, Reactions, Room, Role } from "../types";
 import QuestionList from "./QuestionList.vue";
 
@@ -37,6 +37,32 @@ const emit = defineEmits<{
 
 const text = ref("");
 const anonymous = ref(false);
+const anonymousStorageKey = computed(
+  () => `lecture-qna-anonymous:${props.currentUserId ?? "guest"}`
+);
+
+const loadAnonymousPreference = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const stored = window.localStorage.getItem(anonymousStorageKey.value);
+  if (stored === "true") {
+    anonymous.value = true;
+  } else if (stored === "false") {
+    anonymous.value = false;
+  }
+};
+
+watch(anonymousStorageKey, () => {
+  loadAnonymousPreference();
+}, { immediate: true });
+
+watch(anonymous, (value) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(anonymousStorageKey.value, String(value));
+});
 
 const openCount = computed(
   () => props.questions.filter((question) => question.status === "open").length
