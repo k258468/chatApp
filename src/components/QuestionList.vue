@@ -122,6 +122,16 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
   emit("update-answer", { answerId: answer.id, text });
   editingAnswerId.value = null;
 };
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}/${month}/${day} ${hours}:${minutes}`;
+};
 </script>
 
 <template>
@@ -135,7 +145,7 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
     >
       <div class="meta">
         <span class="badge" :class="question.status">{{ statusLabel(question.status) }}</span>
-        <span class="time">{{ new Date(question.createdAt).toLocaleTimeString() }}</span>
+        <span class="time">{{ formatDate(question.createdAt) }}</span>
       </div>
       <div class="author-block">
         <div class="author-info">
@@ -261,7 +271,7 @@ const saveEditAnswer = (answer: Question["answers"][number]) => {
                 </div>
                 <span class="answer-author">{{ answer.author || "匿名" }}</span>
                 <span class="answer-role">{{ roleLabel(answer.role) }}</span>
-                <span class="time">{{ new Date(answer.createdAt).toLocaleTimeString() }}</span>
+                <span class="time">{{ formatDate(answer.createdAt) }}</span>
               </div>
               <div v-if="editingAnswerId === answer.id" class="edit-block">
                 <textarea v-model="editAnswerText[answer.id]" rows="3" />
