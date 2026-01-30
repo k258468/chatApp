@@ -249,11 +249,9 @@ create table questions (
 
 ## ルーム参加
 - 教員がルーム生成
-- 学生はコード/URL/QR から参加
+- 学生はコードから参加
 
 ## 想定拡張
 - 教員認証 (Supabase Auth + RLS)
 - チャンネルの階層化
 - 質問のタグや投票
-
-## node_modulesは削除しました
